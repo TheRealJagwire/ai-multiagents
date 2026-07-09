@@ -1,5 +1,5 @@
 import { activeTab, grants, statusSummary, type Tab } from "../store.ts";
-import { openSpawnModal, setActiveTab, toggleGrantsPopover } from "../actions.ts";
+import { openMcpModal, openSpawnModal, setActiveTab, toggleGrantsPopover } from "../actions.ts";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "feed", label: "Feed" },
@@ -57,6 +57,22 @@ export function TopBar() {
         />
         {statusSummary.value}
       </div>
+
+      <button
+        type="button"
+        onClick={openMcpModal}
+        style={{
+          padding: "6px 12px",
+          border: "1px solid var(--sb-border-3)",
+          borderRadius: 8,
+          fontSize: 11.5,
+          fontWeight: 600,
+          color: "var(--sb-text-3)",
+          cursor: "pointer",
+        }}
+      >
+        MCP servers
+      </button>
 
       {grants.value.length > 0 && (
         <button

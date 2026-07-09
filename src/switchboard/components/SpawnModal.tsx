@@ -1,13 +1,18 @@
 import type { Effort, Model } from "../types.ts";
 import {
   draftMembers,
+  mcpConfigs,
   memberEffort,
   memberModel,
   modalMode,
   modalOpen,
   promptText,
+  spawnAutonomousLead,
   spawnBaseRef,
+  spawnCreateNew,
   spawnDir,
+  spawnLeadPlans,
+  spawnMcpConfigIds,
   type SpawnMode,
   targetTeamId,
   teamName,
@@ -22,11 +27,15 @@ import {
   setMemberModel,
   setModalMode,
   setPromptText,
+  setSpawnAutonomousLead,
   setSpawnBaseRef,
+  setSpawnCreateNew,
   setSpawnDir,
+  setSpawnLeadPlans,
   setTargetTeamId,
   setTeamName,
   submitSpawn,
+  toggleSpawnMcpConfig,
 } from "../actions.ts";
 import { chipState, effortLabel, modelLabel } from "../format.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
@@ -45,6 +54,27 @@ const inputStyle = {
 };
 
 const labelStyle = { fontSize: 11.5, fontWeight: 600, color: "var(--sb-text-3)" };
+
+function McpConfigChecklist() {
+  if (mcpConfigs.value.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={labelStyle}>MCP servers</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {mcpConfigs.value.map((config) => (
+          <span
+            key={config.id}
+            onClick={() => toggleSpawnMcpConfig(config.id)}
+            style={chipStyle(chipState(spawnMcpConfigIds.value.includes(config.id), false))}
+          >
+            {config.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function SpawnModal() {
   if (!modalOpen.value) return null;
@@ -144,29 +174,79 @@ export function SpawnModal() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2 }}>
                   <div style={labelStyle}>Directory</div>
                   <input
-                    placeholder="/absolute/path/to/repo"
+                    placeholder={spawnCreateNew.value ? "/absolute/path/to/new-repo" : "/absolute/path/to/repo"}
                     value={spawnDir.value}
                     onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
                     style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
                   />
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-                  <div style={labelStyle}>Base ref</div>
-                  <input
-                    placeholder="HEAD"
-                    value={spawnBaseRef.value}
-                    onInput={(e) => setSpawnBaseRef((e.target as HTMLInputElement).value)}
-                    style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
-                  />
-                </div>
+                {!spawnCreateNew.value && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+                    <div style={labelStyle}>Base ref</div>
+                    <input
+                      placeholder="HEAD"
+                      value={spawnBaseRef.value}
+                      onInput={(e) => setSpawnBaseRef((e.target as HTMLInputElement).value)}
+                      style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
+                    />
+                  </div>
+                )}
               </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={spawnCreateNew.value}
+                  onChange={(e) => setSpawnCreateNew((e.target as HTMLInputElement).checked)}
+                />
+                Create this as a new repo (empty directory, git init, initial commit)
+              </label>
               <div style={{ fontSize: 11, color: "var(--sb-text-4)" }}>
-                Each member gets its own git worktree branched from this ref — they can work concurrently without
-                stepping on each other's changes.
+                {spawnCreateNew.value
+                  ? "The directory is created fresh, initialized as a git repo with a first commit — then each member gets its own worktree off it."
+                  : "Each member gets its own git worktree branched from this ref — they can work concurrently without stepping on each other's changes."}
               </div>
+              <McpConfigChecklist />
+
+              <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={spawnLeadPlans.value}
+                  onChange={(e) => setSpawnLeadPlans((e.target as HTMLInputElement).checked)}
+                />
+                Let the lead plan the team
+              </label>
+
+              {spawnLeadPlans.value && (
+                <>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      fontSize: 11.5,
+                      color: "var(--sb-text-3)",
+                      cursor: "pointer",
+                      marginLeft: 20,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={spawnAutonomousLead.value}
+                      onChange={(e) => setSpawnAutonomousLead((e.target as HTMLInputElement).checked)}
+                    />
+                    Let the lead spawn workers itself
+                  </label>
+                  <div style={{ fontSize: 11, color: "var(--sb-text-4)", marginLeft: 20 }}>
+                    {spawnAutonomousLead.value
+                      ? "The lead gets a spawn_worker tool and creates teammates on its own as it decides it needs them, up to 8."
+                      : "The lead writes a plan (SWITCHBOARD_TASKS.md) and stops. You'll review it, then click \"Start workers\" on the team card to spawn the rest of the team from that plan."}
+                  </div>
+                </>
+              )}
+
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={labelStyle}>Members</div>
-                {draftMembers.value.map((member, i) => (
+                <div style={labelStyle}>{spawnLeadPlans.value ? "Lead's task" : "Members"}</div>
+                {(spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value).map((member, i) => (
                   <div
                     key={i}
                     style={{
@@ -180,27 +260,29 @@ export function SpawnModal() {
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: ".07em",
-                          color: i === 0 ? "#fff" : "var(--sb-text-3)",
-                          background: i === 0 ? "var(--sb-primary)" : "var(--sb-surface-3)",
-                          padding: "3px 8px",
-                          borderRadius: 6,
-                          flex: "none",
-                        }}
-                      >
-                        {i === 0 ? "LEAD" : "WORKER"}
-                      </span>
+                      {!spawnLeadPlans.value && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: ".07em",
+                            color: i === 0 ? "#fff" : "var(--sb-text-3)",
+                            background: i === 0 ? "var(--sb-primary)" : "var(--sb-surface-3)",
+                            padding: "3px 8px",
+                            borderRadius: 6,
+                            flex: "none",
+                          }}
+                        >
+                          {i === 0 ? "LEAD" : "WORKER"}
+                        </span>
+                      )}
                       <input
                         placeholder={i === 0 ? "e.g. Plan and coordinate the work" : "e.g. Research competitor pricing"}
                         value={member.task}
                         onInput={(e) => setDraftMember(i, { task: (e.target as HTMLInputElement).value })}
                         style={{ ...inputStyle, flex: 1, padding: "6px 10px", fontSize: 12, background: "var(--sb-surface)" }}
                       />
-                      {draftMembers.value.length > 1 && (
+                      {!spawnLeadPlans.value && draftMembers.value.length > 1 && (
                         <span
                           onClick={() => removeDraftMember(i)}
                           style={{ fontSize: 13, color: "var(--sb-text-5)", cursor: "pointer", padding: "0 3px" }}
@@ -241,12 +323,14 @@ export function SpawnModal() {
                     </div>
                   </div>
                 ))}
-                <div
-                  onClick={addDraftMember}
-                  style={{ fontSize: 12, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer", width: "fit-content" }}
-                >
-                  + Add member
-                </div>
+                {!spawnLeadPlans.value && (
+                  <div
+                    onClick={addDraftMember}
+                    style={{ fontSize: 12, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer", width: "fit-content" }}
+                  >
+                    + Add member
+                  </div>
+                )}
               </div>
             </>
           )
@@ -284,29 +368,57 @@ export function SpawnModal() {
                     </span>{" "}
                     — a new worktree branches off this team's directory.
                   </div>
+                  {(() => {
+                    const team = teams.value.find((t) => t.id === targetTeamId.value);
+                    const names = team?.mcpConfigIds
+                      .map((id) => mcpConfigs.value.find((c) => c.id === id)?.name)
+                      .filter((n): n is string => !!n) ?? [];
+                    return names.length > 0
+                      ? (
+                        <div style={{ fontSize: 11, color: "var(--sb-text-4)" }}>
+                          MCP servers: {names.join(", ")} — inherited from the team.
+                        </div>
+                      )
+                      : null;
+                  })()}
                 </>
               )}
               {modalMode.value === "solo" && (
-                <div style={{ display: "flex", gap: 12 }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2 }}>
-                    <div style={labelStyle}>Directory</div>
-                    <input
-                      placeholder="/absolute/path/to/repo"
-                      value={spawnDir.value}
-                      onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
-                      style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
-                    />
+                <>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2 }}>
+                      <div style={labelStyle}>Directory</div>
+                      <input
+                        placeholder={spawnCreateNew.value ? "/absolute/path/to/new-repo" : "/absolute/path/to/repo"}
+                        value={spawnDir.value}
+                        onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
+                        style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
+                      />
+                    </div>
+                    {!spawnCreateNew.value && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+                        <div style={labelStyle}>Base ref</div>
+                        <input
+                          placeholder="HEAD"
+                          value={spawnBaseRef.value}
+                          onInput={(e) => setSpawnBaseRef((e.target as HTMLInputElement).value)}
+                          style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-                    <div style={labelStyle}>Base ref</div>
+                  <label
+                    style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}
+                  >
                     <input
-                      placeholder="HEAD"
-                      value={spawnBaseRef.value}
-                      onInput={(e) => setSpawnBaseRef((e.target as HTMLInputElement).value)}
-                      style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
+                      type="checkbox"
+                      checked={spawnCreateNew.value}
+                      onChange={(e) => setSpawnCreateNew((e.target as HTMLInputElement).checked)}
                     />
-                  </div>
-                </div>
+                    Create this as a new repo (empty directory, git init, initial commit)
+                  </label>
+                  <McpConfigChecklist />
+                </>
               )}
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

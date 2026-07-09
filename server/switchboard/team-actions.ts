@@ -1,6 +1,7 @@
 import type { Effort, Model } from "../../src/switchboard/types.ts";
 import { findSession, state } from "./state.ts";
 import { pushFeedEvent, pushSessionPatch, pushTeamsReplace } from "./mutations.ts";
+import { deleteSession } from "./session-actions.ts";
 
 const STEP_BOUNDARY_MS = 8000;
 
@@ -131,4 +132,21 @@ export function makeLead(sid: string): void {
     own: true,
     verb: `promoted to lead of ${team?.name ?? "team"} — takes over coordination at the next step`,
   });
+}
+
+// Deletes every member session (same terminate-and-remove as deleteSession)
+// before removing the team record itself — no undo, matching every other
+// irreversible cleanup action in this app.
+export function deleteTeam(teamId: string): void {
+  const team = state.teams.find((t) => t.id === teamId);
+  if (!team) return;
+
+  const members = state.sessions.filter((s) => s.teamId === teamId);
+  const announceSid = members.find((s) => s.lead)?.id ?? members[0]?.id;
+  if (announceSid) {
+    pushFeedEvent({ sid: announceSid, kind: "info", own: true, verb: `team "${team.name}" deleted by you` });
+  }
+
+  for (const member of members) deleteSession(member.id);
+  pushTeamsReplace(state.teams.filter((t) => t.id !== teamId));
 }

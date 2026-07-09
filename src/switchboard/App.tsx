@@ -7,6 +7,7 @@ import {
   addSession,
   approveEvent,
   closeGrantsPopover,
+  closeMcpModal,
   closeReview,
   closeSession,
   closeSpawnModal,
@@ -17,6 +18,8 @@ import {
   patchEvent,
   patchSession,
   removeGrant,
+  removeSessionLocally,
+  replaceMcpConfigs,
   replaceTeams,
 } from "./actions.ts";
 import {
@@ -25,6 +28,7 @@ import {
   digestDismissed,
   focusedPinnedIndex,
   grantsOpen,
+  mcpModalOpen,
   modalOpen,
   pinnedSorted,
   reviewOpen,
@@ -41,6 +45,7 @@ import { Toast } from "./components/Toast.tsx";
 import { ReviewModal } from "./components/ReviewModal.tsx";
 import { GrantsPopover } from "./components/GrantsPopover.tsx";
 import { SpawnModal } from "./components/SpawnModal.tsx";
+import { McpConfigsModal } from "./components/McpConfigsModal.tsx";
 
 export function App() {
   useEffect(() => {
@@ -57,6 +62,8 @@ export function App() {
         onTranscriptMessage: ingestTranscriptMessage,
         onTeamsReplaced: replaceTeams,
         onSessionAdded: addSession,
+        onSessionRemoved: removeSessionLocally,
+        onMcpConfigsReplaced: replaceMcpConfigs,
       });
     });
 
@@ -81,6 +88,7 @@ export function App() {
       if (e.key === "Escape") {
         if (reviewOpen.value !== null) closeReview();
         else if (modalOpen.value) closeSpawnModal();
+        else if (mcpModalOpen.value) closeMcpModal();
         else if (grantsOpen.value) closeGrantsPopover();
         else if (selectedSessionId.value !== null) closeSession();
         return;
@@ -136,6 +144,7 @@ export function App() {
       <ReviewModal />
       <GrantsPopover />
       <SpawnModal />
+      <McpConfigsModal />
       <Toast />
     </div>
   );

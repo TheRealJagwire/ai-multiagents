@@ -1,11 +1,14 @@
 import type { JSX } from "preact";
 import type { Effort, Model, Session } from "../types.ts";
-import { expandedMemberId, moveConfirm, selectedSessionId, sessions, teams } from "../store.ts";
+import { deleteSessionConfirm, expandedMemberId, moveConfirm, selectedSessionId, sessions, teams } from "../store.ts";
 import {
+  askDeleteSession,
+  cancelDeleteSession,
   cancelMove,
   cancelMoveConfirm,
   cancelPendingEffort,
   cancelPendingModel,
+  confirmDeleteSession,
   makeLead,
   openMoveConfirm,
   openSession,
@@ -47,6 +50,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
   const hasPending = !!(session.pendingModel || session.pendingEffort || session.pendingMove);
   const mc = moveConfirm.value;
   const mcActive = expanded && mc?.sid === session.id;
+  const deleteConfirmActive = expanded && deleteSessionConfirm.value === session.id;
 
   const pendingNotes: { text: string; cancel: () => void }[] = [];
   if (session.pendingModel) {
@@ -224,7 +228,58 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
             </div>
           )}
 
-          {mcActive
+          {deleteConfirmActive
+            ? (
+              <div
+                className="sb-sbin"
+                style={{
+                  background: "var(--sb-red-tint-1)",
+                  border: "1px solid var(--sb-red-tint-3)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 700 }}>Delete this session?</div>
+                <div style={{ fontSize: 11.5, lineHeight: 1.5, color: "var(--sb-text-2)" }}>
+                  Terminates it and removes it from every list. Its worktree is removed but the branch is kept.
+                </div>
+                <div style={{ display: "flex", gap: 8, paddingTop: 3 }}>
+                  <span
+                    onClick={() => confirmDeleteSession(session.id)}
+                    style={{
+                      padding: "5px 14px",
+                      background: "var(--sb-error-dot)",
+                      color: "#fff",
+                      borderRadius: 7,
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Confirm delete
+                  </span>
+                  <span
+                    onClick={cancelDeleteSession}
+                    style={{
+                      padding: "5px 14px",
+                      border: "1px solid var(--sb-border-3)",
+                      background: "var(--sb-surface)",
+                      borderRadius: 7,
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: "var(--sb-text-3)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </span>
+                </div>
+              </div>
+            )
+            : mcActive
             ? (
               <div
                 className="sb-sbin"
@@ -344,6 +399,21 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     Make lead
                   </span>
                 )}
+                <span style={{ flex: 1 }} />
+                <span
+                  onClick={() => askDeleteSession(session.id)}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--sb-error-text)",
+                    border: "1px solid var(--sb-red-tint-3)",
+                    padding: "3px 10px",
+                    borderRadius: 7,
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete
+                </span>
               </div>
             )}
 

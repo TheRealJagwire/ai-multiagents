@@ -1,4 +1,4 @@
-import type { Effort, FeedEvent, Grant, Model, Session, Snapshot, Team, TranscriptMessage } from "./types.ts";
+import type { Effort, FeedEvent, Grant, McpConfig, Model, Session, Snapshot, Team, TranscriptMessage } from "./types.ts";
 
 export async function fetchSnapshot(): Promise<Snapshot> {
   const res = await fetch("/api/switchboard/snapshot");
@@ -14,6 +14,8 @@ export interface EventHandlers {
   onTranscriptMessage: (sid: string, message: TranscriptMessage) => void;
   onTeamsReplaced: (teams: Team[]) => void;
   onSessionAdded: (session: Session) => void;
+  onSessionRemoved: (id: string) => void;
+  onMcpConfigsReplaced: (configs: McpConfig[]) => void;
 }
 
 export function subscribeToEvents(handlers: EventHandlers): () => void {
@@ -68,6 +70,16 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
     handlers.onSessionAdded(session);
   });
 
+  source.addEventListener("session-removed", (message) => {
+    const { id } = JSON.parse((message as MessageEvent).data) as { id: string };
+    handlers.onSessionRemoved(id);
+  });
+
+  source.addEventListener("mcp-configs-replaced", (message) => {
+    const configs = JSON.parse((message as MessageEvent).data) as McpConfig[];
+    handlers.onMcpConfigsReplaced(configs);
+  });
+
   return () => source.close();
 }
 
@@ -77,6 +89,10 @@ async function post(path: string, body?: Record<string, unknown>): Promise<void>
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
+}
+
+async function del(path: string): Promise<void> {
+  await fetch(`/api/switchboard${path}`, { method: "DELETE" });
 }
 
 export function approveEvent(id: string, scope: "once" | "session"): Promise<void> {
@@ -135,6 +151,18 @@ export function makeLead(id: string): Promise<void> {
   return post(`/sessions/${id}/make-lead`);
 }
 
+export function deleteSession(id: string): Promise<void> {
+  return del(`/sessions/${id}`);
+}
+
+export function deleteTeam(id: string): Promise<void> {
+  return del(`/teams/${id}`);
+}
+
+export function startWorkers(id: string): Promise<void> {
+  return post(`/teams/${id}/start-workers`);
+}
+
 export function approveArtifact(id: string): Promise<void> {
   return post(`/events/${id}/approve-artifact`);
 }
@@ -149,6 +177,14 @@ export function revokeGrant(id: string): Promise<void> {
 
 export function spawnSession(body: Record<string, unknown>): Promise<void> {
   return post(`/sessions`, body);
+}
+
+export function addMcpConfig(body: Record<string, unknown>): Promise<void> {
+  return post(`/mcp-configs`, body);
+}
+
+export function deleteMcpConfig(id: string): Promise<void> {
+  return del(`/mcp-configs/${id}`);
 }
 
 export function undo(key: string): Promise<void> {

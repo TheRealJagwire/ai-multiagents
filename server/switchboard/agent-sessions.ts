@@ -1,18 +1,105 @@
-import { query } from "npm:@anthropic-ai/claude-agent-sdk@^0.3.204";
+import { createSdkMcpServer, query, tool } from "npm:@anthropic-ai/claude-agent-sdk@^0.3.204";
 import type {
   CanUseTool,
+  McpServerConfig,
   Options,
   SDKMessage,
   SDKUserMessage,
 } from "npm:@anthropic-ai/claude-agent-sdk@^0.3.204";
+import { z } from "npm:zod@^4.4.3";
 import type { Effort, Model } from "../../src/switchboard/types.ts";
 import { pushFeedEvent, pushSessionPatch, pushTranscriptMessage } from "./mutations.ts";
 import { getAgentSession, registerAgentSession, registerPendingApproval } from "./agent-registry.ts";
+import { state } from "./state.ts";
+
+// Looks up each id against the live config library rather than snapshotting
+// configs at spawn time — a config deleted between spawn and lookup is just
+// silently skipped (the session still starts, minus that server) rather
+// than failing the whole spawn.
+function buildMcpServers(mcpConfigIds: string[]): Record<string, McpServerConfig> {
+  const servers: Record<string, McpServerConfig> = {};
+  for (const id of mcpConfigIds) {
+    const config = state.mcpConfigs.find((c) => c.id === id);
+    if (!config) continue;
+
+    if (config.transport === "stdio") {
+      servers[config.name] = {
+        type: "stdio",
+        command: config.command,
+        ...(config.args.length ? { args: config.args } : {}),
+        ...(Object.keys(config.env).length ? { env: config.env } : {}),
+      };
+    } else {
+      servers[config.name] = {
+        type: config.transport,
+        url: config.url,
+        ...(Object.keys(config.headers).length ? { headers: config.headers } : {}),
+      };
+    }
+  }
+  return servers;
+}
+
+export type SpawnWorkerResult = { ok: true } | { ok: false; error: string };
+
+// An in-process MCP server (no subprocess, no network) exposing a single
+// tool that lets an "autonomous"-mode team lead spawn its own teammates.
+// The actual spawning logic lives in spawn-actions.ts and is handed in as a
+// plain callback — see SpawnOptions.onSpawnWorker below for why.
+function buildCoordinatorServer(onSpawnWorker: (task: string) => Promise<SpawnWorkerResult>): McpServerConfig {
+  return createSdkMcpServer({
+    name: "switchboard",
+    tools: [
+      tool(
+        "spawn_worker",
+        "Spawn a new worker agent session as part of this team. The worker gets its own git worktree " +
+          "branched from your current branch, so commit anything it needs to see before calling this.",
+        { task: z.string().describe("A clear, self-contained description of what this worker should do.") },
+        async ({ task }) => {
+          const result = await onSpawnWorker(task);
+          return {
+            content: [{
+              type: "text" as const,
+              text: result.ok ? `Worker spawned for: ${task}` : `Failed to spawn worker: ${result.error}`,
+            }],
+          };
+        },
+      ),
+    ],
+  });
+}
 
 const WORKER_SYSTEM_PROMPT =
   "You are an autonomous worker agent running inside Switchboard, a multi-agent orchestration UI. " +
   "Work through the task you were given, narrate meaningful progress in plain language, and use your " +
-  "tools to do real work in the git worktree you've been given as your working directory.";
+  "tools to do real work in the git worktree you've been given as your working directory. " +
+  "Always end your final reply to a request with a concise one-to-two sentence summary of exactly what " +
+  "you did — it's shown on its own in an activity feed, so it needs to stand alone without the rest of " +
+  "the conversation.";
+
+// The SDK's own bundled `claude` binary lives inside node_modules and, in
+// the packaged .app, only exists as a temp copy lazily extracted from the
+// compiled binary at spawn time — that extraction can produce a copy that
+// fails to launch (wrong permissions/signing), independent of any real
+// libc/arch mismatch. Prefer whatever `claude` the user already has on
+// PATH (the same one `claude login` authenticates) and only fall back to
+// the SDK's bundled copy if none is found.
+let claudeExecutablePromise: Promise<string | undefined> | null = null;
+function resolveClaudeExecutable(): Promise<string | undefined> {
+  if (!claudeExecutablePromise) {
+    claudeExecutablePromise = (async () => {
+      try {
+        const { code, stdout } = await new Deno.Command("which", { args: ["claude"], stdout: "piped" }).output();
+        if (code !== 0) return undefined;
+        const path = new TextDecoder().decode(stdout).trim();
+        return path || undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+  }
+  return claudeExecutablePromise;
+}
 
 // Pull-based async queue so query() can be called once with a long-lived
 // AsyncIterable as its prompt — later code pushes follow-up user messages
@@ -60,6 +147,10 @@ export interface SpawnOptions {
   branch: string;
   model: Model;
   effort: Effort;
+  mcpConfigIds: string[];
+  // Only set when spawning the lead of an "autonomous" team — regular
+  // workers never receive it, so only a lead can grow its own team.
+  onSpawnWorker?: (task: string) => Promise<SpawnWorkerResult>;
 }
 
 export async function spawnAgentSession(sid: string, task: string, opts: SpawnOptions): Promise<void> {
@@ -94,6 +185,11 @@ export async function spawnAgentSession(sid: string, task: string, opts: SpawnOp
     });
   };
 
+  const pathToClaudeCodeExecutable = await resolveClaudeExecutable();
+  const mcpServers = buildMcpServers(opts.mcpConfigIds);
+  if (opts.onSpawnWorker) {
+    mcpServers["switchboard"] = buildCoordinatorServer(opts.onSpawnWorker);
+  }
   const options: Options = {
     cwd: opts.worktreePath,
     model: opts.model,
@@ -101,6 +197,8 @@ export async function spawnAgentSession(sid: string, task: string, opts: SpawnOp
     permissionMode: "default",
     canUseTool,
     systemPrompt: WORKER_SYSTEM_PROMPT,
+    ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
+    ...(Object.keys(mcpServers).length ? { mcpServers } : {}),
   };
 
   const q = query({ prompt: queue, options });
@@ -123,6 +221,41 @@ export async function spawnAgentSession(sid: string, task: string, opts: SpawnOp
   } catch (err) {
     pushFeedEvent({ sid, kind: "error", own: false, verb: `session stream error: ${String(err)}` });
   }
+}
+
+// Text from the most recent assistant message only (reset on every new
+// assistant message, not accumulated across the whole turn) — the system
+// prompt instructs the agent to make its final reply a concise summary, so
+// capturing just that last message is what makes the posted summary
+// actually concise instead of a dump of every intermediate narration line.
+const turnText = new Map<string, string[]>();
+
+function beginAssistantMessage(sid: string): void {
+  turnText.set(sid, []);
+}
+
+function collectTurnText(sid: string, text: string): void {
+  const existing = turnText.get(sid);
+  if (existing) existing.push(text);
+  else turnText.set(sid, [text]);
+}
+
+const TURN_SUMMARY_LIMIT = 500;
+
+// Posts the summary both to the feed (visible at a glance across all
+// sessions) and into this session's own transcript (so it scrolls by inline
+// with the rest of the live updates when you have the session open).
+function flushTurnSummary(sid: string): void {
+  const blocks = turnText.get(sid);
+  turnText.delete(sid);
+  if (!blocks || blocks.length === 0) return;
+
+  const text = blocks.join("\n\n").trim();
+  if (!text) return;
+
+  const body = text.length > TURN_SUMMARY_LIMIT ? `${text.slice(0, TURN_SUMMARY_LIMIT)}…` : text;
+  pushTranscriptMessage(sid, { k: "summary", text: body });
+  pushFeedEvent({ sid, kind: "message", own: false, verb: "responded", body });
 }
 
 function textFromContent(content: unknown): string {
@@ -164,9 +297,11 @@ function handleMessage(sid: string, message: SDKMessage): void {
     case "assistant": {
       const content = (anyMessage.message as { content?: unknown } | undefined)?.content;
       if (Array.isArray(content)) {
+        beginAssistantMessage(sid);
         for (const block of content as { type: string; text?: string; name?: string; input?: unknown }[]) {
           if (block.type === "text" && block.text) {
             pushTranscriptMessage(sid, { k: "text", text: block.text });
+            collectTurnText(sid, block.text);
           } else if (block.type === "tool_use") {
             const label = block.input && typeof block.input === "object"
               ? JSON.stringify(block.input)
@@ -193,7 +328,10 @@ function handleMessage(sid: string, message: SDKMessage): void {
       // A "result" marks the end of one turn, not the end of the session —
       // more messages (approvals, chat replies, retries) can still arrive
       // via the same queue, so this deliberately does not set status "done".
-      if (anyMessage.subtype && anyMessage.subtype !== "success") {
+      if (anyMessage.subtype === "success") {
+        flushTurnSummary(sid);
+      } else if (anyMessage.subtype) {
+        turnText.delete(sid);
         const errors = Array.isArray(anyMessage.errors) ? (anyMessage.errors as string[]) : [];
         pushFeedEvent({
           sid,

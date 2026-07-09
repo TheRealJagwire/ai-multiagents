@@ -27,7 +27,8 @@
     "npm:typescript@*": "5.9.3",
     "npm:typescript@^5.7.2": "5.9.3",
     "npm:vite@*": "6.4.3",
-    "npm:vite@^6.0.7": "6.4.3"
+    "npm:vite@^6.0.7": "6.4.3",
+    "npm:zod@^4.4.3": "4.4.3"
   },
   "jsr": {
     "@hono/hono@4.12.24": {

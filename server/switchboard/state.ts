@@ -6,6 +6,7 @@ export const state: Snapshot = {
   events: [],
   grants: [],
   transcripts: {},
+  mcpConfigs: [],
 };
 
 let counter = 0;

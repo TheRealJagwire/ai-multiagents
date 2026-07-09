@@ -5,6 +5,8 @@ import {
   activeTab,
   chatText,
   confirmStop,
+  deleteSessionConfirm,
+  deleteTeamConfirm,
   type DraftMember,
   digestDismissed,
   draftMembers,
@@ -15,6 +17,15 @@ import {
   grants,
   grantsOpen,
   lastSeen,
+  mcpConfigs,
+  mcpFormArgsText,
+  mcpFormCommand,
+  mcpFormEnvText,
+  mcpFormHeadersText,
+  mcpFormName,
+  mcpFormTransport,
+  mcpFormUrl,
+  mcpModalOpen,
   memberEffort,
   memberModel,
   modalMode,
@@ -29,9 +40,14 @@ import {
   sessionFilter,
   sessions,
   sessionsById,
+  spawnAutonomousLead,
   spawnBaseRef,
+  spawnCreateNew,
   spawnDir,
+  spawnLeadPlans,
+  spawnMcpConfigIds,
   type SpawnMode,
+  startWorkersConfirm,
   type Tab,
   targetTeamId,
   teamName,
@@ -39,7 +55,7 @@ import {
   toast,
   transcripts,
 } from "./store.ts";
-import type { Effort, FeedEvent, Grant, Model, Session, Snapshot, Team, TranscriptMessage } from "./types.ts";
+import type { Effort, FeedEvent, Grant, McpConfig, McpTransport, Model, Session, Snapshot, Team, TranscriptMessage } from "./types.ts";
 import { modelLabel } from "./format.ts";
 
 export function ingestSnapshot(snapshot: Snapshot): void {
@@ -48,6 +64,11 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   events.value = [...snapshot.events].sort((a, b) => b.ts - a.ts);
   grants.value = snapshot.grants;
   transcripts.value = snapshot.transcripts;
+  mcpConfigs.value = snapshot.mcpConfigs;
+}
+
+export function replaceMcpConfigs(configs: McpConfig[]): void {
+  mcpConfigs.value = configs;
 }
 
 export function ingestFeedEvent(event: FeedEvent): void {
@@ -80,6 +101,12 @@ export function replaceTeams(nextTeams: Team[]): void {
 
 export function addSession(session: Session): void {
   sessions.value = [...sessions.value, session];
+}
+
+export function removeSessionLocally(id: string): void {
+  sessions.value = sessions.value.filter((s) => s.id !== id);
+  if (selectedSessionId.value === id) closeSession();
+  if (deleteSessionConfirm.value === id) deleteSessionConfirm.value = null;
 }
 
 export function setFilter(filter: ActivityFilter): void {
@@ -236,6 +263,55 @@ export async function confirmStopSession(id: string): Promise<void> {
   closeSession();
 }
 
+export function askDeleteSession(id: string): void {
+  deleteSessionConfirm.value = id;
+}
+
+export function cancelDeleteSession(): void {
+  deleteSessionConfirm.value = null;
+}
+
+// No undo, same reasoning as confirmStopSession — deleting also terminates
+// the underlying process, and additionally removes the session from every
+// list, so there's nothing left to restore even the honest way.
+export async function confirmDeleteSession(id: string): Promise<void> {
+  const session = sessionsById.value.get(id);
+  deleteSessionConfirm.value = null;
+  if (session) showToast(`Deleted ${session.short}`);
+  await api.deleteSession(id);
+  closeSession();
+}
+
+export function askDeleteTeam(id: string): void {
+  deleteTeamConfirm.value = id;
+}
+
+export function cancelDeleteTeam(): void {
+  deleteTeamConfirm.value = null;
+}
+
+export async function confirmDeleteTeam(id: string): Promise<void> {
+  const team = teams.value.find((t) => t.id === id);
+  deleteTeamConfirm.value = null;
+  if (team) showToast(`Deleted ${team.name}`);
+  await api.deleteTeam(id);
+}
+
+export function askStartWorkers(id: string): void {
+  startWorkersConfirm.value = id;
+}
+
+export function cancelStartWorkers(): void {
+  startWorkersConfirm.value = null;
+}
+
+export async function confirmStartWorkers(id: string): Promise<void> {
+  const team = teams.value.find((t) => t.id === id);
+  startWorkersConfirm.value = null;
+  if (team) showToast(`Starting workers for ${team.name}`);
+  await api.startWorkers(id);
+}
+
 export function sendMessage(id: string, text: string): Promise<void> {
   return api.sendMessage(id, text);
 }
@@ -327,6 +403,10 @@ export function openSpawnModal(mode: SpawnMode, teamId?: string): void {
   draftMembers.value = mode === "new" ? freshDraft() : [];
   spawnDir.value = "";
   spawnBaseRef.value = "HEAD";
+  spawnCreateNew.value = false;
+  spawnMcpConfigIds.value = [];
+  spawnLeadPlans.value = false;
+  spawnAutonomousLead.value = false;
   modalOpen.value = true;
 }
 
@@ -368,6 +448,25 @@ export function setSpawnBaseRef(value: string): void {
   spawnBaseRef.value = value;
 }
 
+export function setSpawnCreateNew(value: boolean): void {
+  spawnCreateNew.value = value;
+}
+
+export function setSpawnLeadPlans(value: boolean): void {
+  spawnLeadPlans.value = value;
+  if (!value) spawnAutonomousLead.value = false;
+}
+
+export function setSpawnAutonomousLead(value: boolean): void {
+  spawnAutonomousLead.value = value;
+}
+
+export function toggleSpawnMcpConfig(id: string): void {
+  spawnMcpConfigIds.value = spawnMcpConfigIds.value.includes(id)
+    ? spawnMcpConfigIds.value.filter((c) => c !== id)
+    : [...spawnMcpConfigIds.value, id];
+}
+
 export function addDraftMember(): void {
   draftMembers.value = [...draftMembers.value, { task: "", model: "sonnet", effort: "medium" }];
 }
@@ -384,13 +483,20 @@ export function setDraftMember(index: number, patch: Partial<DraftMember>): void
 export async function submitSpawn(): Promise<void> {
   const mode = modalMode.value;
   if (mode === "new") {
+    const coordination = !spawnLeadPlans.value ? "classic" : (spawnAutonomousLead.value ? "autonomous" : "sequenced");
+    // In lead-plans mode only the lead's row (index 0) is meaningful — the
+    // rest of the team is determined by the lead, not typed in here.
+    const members = coordination === "classic" ? draftMembers.value : draftMembers.value.slice(0, 1);
     await api.spawnSession({
       mode: "new",
       teamName: teamName.value,
       goal: promptText.value,
       dir: spawnDir.value,
       baseRef: spawnBaseRef.value,
-      members: draftMembers.value,
+      createNew: spawnCreateNew.value,
+      coordination,
+      mcpConfigIds: spawnMcpConfigIds.value,
+      members,
     });
   } else if (mode === "existing") {
     await api.spawnSession({
@@ -408,7 +514,91 @@ export async function submitSpawn(): Promise<void> {
       effort: memberEffort.value,
       dir: spawnDir.value,
       baseRef: spawnBaseRef.value,
+      createNew: spawnCreateNew.value,
+      mcpConfigIds: spawnMcpConfigIds.value,
     });
   }
   closeSpawnModal();
+}
+
+// KEY=VALUE per line — good enough for the small env/header sets a personal
+// desktop app's config forms realistically need, no reason to build a
+// dynamic add/remove-row UI for this.
+function parseKeyValueLines(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return out;
+}
+
+function resetMcpForm(): void {
+  mcpFormName.value = "";
+  mcpFormTransport.value = "stdio";
+  mcpFormCommand.value = "";
+  mcpFormArgsText.value = "";
+  mcpFormEnvText.value = "";
+  mcpFormUrl.value = "";
+  mcpFormHeadersText.value = "";
+}
+
+export function openMcpModal(): void {
+  resetMcpForm();
+  mcpModalOpen.value = true;
+}
+
+export function closeMcpModal(): void {
+  mcpModalOpen.value = false;
+}
+
+export function setMcpFormName(value: string): void {
+  mcpFormName.value = value;
+}
+
+export function setMcpFormTransport(value: McpTransport): void {
+  mcpFormTransport.value = value;
+}
+
+export function setMcpFormCommand(value: string): void {
+  mcpFormCommand.value = value;
+}
+
+export function setMcpFormArgsText(value: string): void {
+  mcpFormArgsText.value = value;
+}
+
+export function setMcpFormEnvText(value: string): void {
+  mcpFormEnvText.value = value;
+}
+
+export function setMcpFormUrl(value: string): void {
+  mcpFormUrl.value = value;
+}
+
+export function setMcpFormHeadersText(value: string): void {
+  mcpFormHeadersText.value = value;
+}
+
+export async function submitMcpConfig(): Promise<void> {
+  if (!mcpFormName.value.trim()) return;
+
+  await api.addMcpConfig({
+    name: mcpFormName.value,
+    transport: mcpFormTransport.value,
+    command: mcpFormCommand.value,
+    args: mcpFormArgsText.value.split(/\s+/).filter(Boolean),
+    env: parseKeyValueLines(mcpFormEnvText.value),
+    url: mcpFormUrl.value,
+    headers: parseKeyValueLines(mcpFormHeadersText.value),
+  });
+  resetMcpForm();
+}
+
+export function deleteMcpConfig(id: string): Promise<void> {
+  spawnMcpConfigIds.value = spawnMcpConfigIds.value.filter((c) => c !== id);
+  return api.deleteMcpConfig(id);
 }

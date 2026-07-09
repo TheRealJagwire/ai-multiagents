@@ -34,6 +34,36 @@ export async function assertRefExists(dir: string, ref: string): Promise<void> {
   });
 }
 
+// Creates the directory (must not already exist, or must be empty — this
+// never git-inits over a directory that already has content), initializes a
+// repo in it, and makes a first commit so `HEAD` resolves to a real commit —
+// worktrees can't branch off an unborn HEAD. The commit is attributed to
+// "Switchboard" rather than the host user's own git identity, since it's
+// machine-generated scaffolding, not something the user authored.
+export async function createNewRepo(dir: string): Promise<void> {
+  if (!dir || !dir.startsWith("/")) {
+    throw new Error(`directory must be an absolute path: "${dir}"`);
+  }
+
+  try {
+    const stat = await Deno.stat(dir);
+    if (!stat.isDirectory) throw new Error(`not a directory: ${dir}`);
+    for await (const _entry of Deno.readDir(dir)) {
+      throw new Error(`directory already exists and is not empty: ${dir}`);
+    }
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+
+  await Deno.mkdir(dir, { recursive: true });
+  await runGit(["init", dir]);
+  await runGit(["-C", dir, "config", "user.name", "Switchboard"], dir);
+  await runGit(["-C", dir, "config", "user.email", "switchboard@localhost"], dir);
+  await Deno.writeTextFile(join(dir, "README.md"), `# ${basename(dir)}\n`);
+  await runGit(["-C", dir, "add", "README.md"], dir);
+  await runGit(["-C", dir, "commit", "-m", "Initial commit"], dir);
+}
+
 // Worktrees live next to the repo, not inside it — this repo's own
 // .gitignore never needs to know about them, and `cd ..` from the repo
 // finds every session's checkout.
@@ -59,16 +89,33 @@ export async function createWorktree(
   await runGit(["-C", dir, "worktree", "add", "-b", branch, worktreePath, ref], dir);
 }
 
+// Commits anything uncommitted in a worktree so a later operation that reads
+// or branches off it (removal, or spawning workers off this branch) never
+// silently misses in-progress work. `--no-verify` so a pre-commit hook in
+// the target repo can't block it.
+export async function commitPendingChanges(worktreePath: string, message: string): Promise<void> {
+  const dirty = await runGit(["status", "--porcelain"], worktreePath).catch(() => "");
+  if (!dirty) return;
+  await runGit(["add", "-A"], worktreePath);
+  await runGit(["commit", "--no-verify", "-m", message], worktreePath);
+}
+
 // Auto-removes the worktree but never the branch — any uncommitted work
 // gets a WIP commit first so cleanup can never silently discard it.
 export async function removeWorktree(dir: string, worktreePath: string): Promise<void> {
-  const dirty = await runGit(["status", "--porcelain"], worktreePath).catch(() => "");
-  if (dirty) {
-    await runGit(["add", "-A"], worktreePath);
-    await runGit(
-      ["commit", "--no-verify", "-m", "WIP: auto-saved by Switchboard before worktree removal"],
-      worktreePath,
-    );
-  }
+  await commitPendingChanges(worktreePath, "WIP: auto-saved by Switchboard before worktree removal");
   await runGit(["-C", dir, "worktree", "remove", worktreePath, "--force"], dir);
+}
+
+// The file a "sequenced"-mode lead is instructed to write, listing one task
+// per teammate — see team-spec.ts for the format it's parsed with.
+export const SPEC_FILE_NAME = "SWITCHBOARD_TASKS.md";
+
+export async function readSpecFile(worktreePath: string): Promise<string | null> {
+  try {
+    return await Deno.readTextFile(join(worktreePath, SPEC_FILE_NAME));
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return null;
+    throw err;
+  }
 }

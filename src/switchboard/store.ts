@@ -1,5 +1,5 @@
 import { computed, signal } from "@preact/signals";
-import type { Effort, FeedEvent, Grant, Model, Session, Team, TranscriptMessage } from "./types.ts";
+import type { Effort, FeedEvent, Grant, McpConfig, McpTransport, Model, Session, Team, TranscriptMessage } from "./types.ts";
 
 export type SpawnMode = "solo" | "existing" | "new";
 
@@ -24,6 +24,7 @@ export const teams = signal<Team[]>([]);
 export const events = signal<FeedEvent[]>([]); // newest first
 export const grants = signal<Grant[]>([]);
 export const transcripts = signal<Record<string, TranscriptMessage[]>>({});
+export const mcpConfigs = signal<McpConfig[]>([]);
 
 // UI state
 export const activeTab = signal<Tab>("feed");
@@ -39,6 +40,9 @@ export const confirmStop = signal(false);
 export const chatText = signal("");
 export const expandedMemberId = signal<string | null>(null);
 export const moveConfirm = signal<{ sid: string; target: string | null } | null>(null);
+export const deleteSessionConfirm = signal<string | null>(null);
+export const deleteTeamConfirm = signal<string | null>(null);
+export const startWorkersConfirm = signal<string | null>(null);
 export const toast = signal<{ label: string; undo?: () => void } | null>(null);
 export const focusedPinnedIndex = signal(0);
 export const feedWindowSize = signal(150);
@@ -55,6 +59,20 @@ export const memberEffort = signal<Effort>("medium");
 export const draftMembers = signal<DraftMember[]>([]);
 export const spawnDir = signal("");
 export const spawnBaseRef = signal("HEAD");
+export const spawnCreateNew = signal(false);
+export const spawnMcpConfigIds = signal<string[]>([]);
+export const spawnLeadPlans = signal(false);
+export const spawnAutonomousLead = signal(false);
+
+// MCP config library modal
+export const mcpModalOpen = signal(false);
+export const mcpFormName = signal("");
+export const mcpFormTransport = signal<McpTransport>("stdio");
+export const mcpFormCommand = signal("");
+export const mcpFormArgsText = signal("");
+export const mcpFormEnvText = signal("");
+export const mcpFormUrl = signal("");
+export const mcpFormHeadersText = signal("");
 
 // Derived
 export const sessionsById = computed(() => new Map(sessions.value.map((s) => [s.id, s])));

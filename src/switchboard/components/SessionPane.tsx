@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "preact/hooks";
 import type { Effort, EventResolution, Model } from "../types.ts";
 import {
   chatText,
   confirmStop,
+  deleteSessionConfirm,
   eventsById,
   grants,
   selectedSession,
@@ -11,11 +13,14 @@ import {
 } from "../store.ts";
 import {
   approveEvent,
+  askDeleteSession,
   askStop,
+  cancelDeleteSession,
   cancelPendingEffort,
   cancelPendingModel,
   cancelStop,
   closeSession,
+  confirmDeleteSession,
   confirmStopSession,
   denyEvent,
   sendMessage,
@@ -40,6 +45,17 @@ function resolvedLabel(resolution: EventResolution): string {
 
 export function SessionPane() {
   const session = selectedSession.value;
+  const transcript = selectedTranscript.value;
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  // Keeps the transcript pinned to the newest message as updates stream in
+  // (new text, tool calls, the end-of-turn summary) instead of leaving the
+  // scroll position wherever it happened to be.
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [session?.id, transcript.length]);
+
   if (!session) return null;
 
   const colors = statusColor(session.status);
@@ -294,27 +310,83 @@ export function SessionPane() {
                 </button>
               </>
             )
+            : deleteSessionConfirm.value === session.id
+            ? (
+              <>
+                <span style={{ fontSize: 11.5, color: "var(--sb-text-4)", alignSelf: "center" }}>
+                  Delete this session? Worktree removed, branch kept.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => confirmDeleteSession(session.id)}
+                  style={{
+                    padding: "5px 13px",
+                    background: "var(--sb-error-dot)",
+                    color: "#fff",
+                    borderRadius: 7,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Confirm delete
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelDeleteSession}
+                  style={{
+                    padding: "5px 13px",
+                    border: "1px solid var(--sb-border-3)",
+                    borderRadius: 7,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--sb-text-4)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            )
             : (
-              <button
-                type="button"
-                onClick={askStop}
-                style={{
-                  padding: "5px 13px",
-                  border: "1px solid var(--sb-red-tint-3)",
-                  color: "var(--sb-error-text)",
-                  borderRadius: 7,
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Stop
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={askStop}
+                  style={{
+                    padding: "5px 13px",
+                    border: "1px solid var(--sb-red-tint-3)",
+                    color: "var(--sb-error-text)",
+                    borderRadius: 7,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  onClick={() => askDeleteSession(session.id)}
+                  style={{
+                    padding: "5px 13px",
+                    border: "1px solid var(--sb-border-3)",
+                    color: "var(--sb-text-3)",
+                    borderRadius: 7,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete
+                </button>
+              </>
             )}
         </div>
       </div>
 
       <div
+        ref={transcriptRef}
         style={{
           flex: 1,
           overflowY: "auto",
@@ -325,7 +397,7 @@ export function SessionPane() {
           background: "var(--sb-bg)",
         }}
       >
-        {selectedTranscript.value.map((message, i) => {
+        {transcript.map((message, i) => {
           if (message.k === "note") {
             return (
               <div
@@ -349,6 +421,35 @@ export function SessionPane() {
           if (message.k === "text") {
             return (
               <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--sb-text-2)" }}>
+                {message.text}
+              </div>
+            );
+          }
+          if (message.k === "summary") {
+            return (
+              <div
+                key={i}
+                style={{
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: "var(--sb-text-1)",
+                  background: "var(--sb-running-bg)",
+                  border: "1px solid var(--sb-running-dot)",
+                  borderRadius: 10,
+                  padding: "10px 13px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    letterSpacing: ".07em",
+                    color: "var(--sb-running-text)",
+                    marginBottom: 4,
+                  }}
+                >
+                  SUMMARY
+                </div>
                 {message.text}
               </div>
             );

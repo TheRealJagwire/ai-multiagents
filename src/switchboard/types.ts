@@ -47,6 +47,7 @@ export interface Session {
   dir: string;
   worktreePath: string | null;
   branch: string | null;
+  mcpConfigIds: string[];
 }
 
 export type EventKind =
@@ -90,6 +91,8 @@ export interface FeedEvent {
   artPreview?: [string, ArtifactPreviewStyle][];
 }
 
+export type TeamCoordination = "classic" | "sequenced" | "autonomous";
+
 export interface Team {
   id: string;
   name: string;
@@ -97,6 +100,22 @@ export interface Team {
   dir: string;
   baseRef: string;
   startedAt: number;
+  mcpConfigIds: string[];
+  coordination: TeamCoordination;
+  workersStarted: boolean;
+}
+
+export type McpTransport = "stdio" | "http" | "sse";
+
+export interface McpConfig {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command: string; // stdio only
+  args: string[]; // stdio only
+  env: Record<string, string>; // stdio only
+  url: string; // http/sse only
+  headers: Record<string, string>; // http/sse only
 }
 
 export interface Grant {
@@ -106,7 +125,7 @@ export interface Grant {
   grantedAt: number;
 }
 
-export type TranscriptMessageKind = "note" | "text" | "tool" | "user" | "perm";
+export type TranscriptMessageKind = "note" | "text" | "tool" | "user" | "perm" | "summary";
 
 export interface TranscriptMessage {
   k: TranscriptMessageKind;
@@ -120,4 +139,5 @@ export interface Snapshot {
   events: FeedEvent[];
   grants: Grant[];
   transcripts: Record<string, TranscriptMessage[]>;
+  mcpConfigs: McpConfig[];
 }

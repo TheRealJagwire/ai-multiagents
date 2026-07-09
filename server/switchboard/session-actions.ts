@@ -1,5 +1,5 @@
-import { findSession } from "./state.ts";
-import { pushFeedEvent, pushSessionPatch } from "./mutations.ts";
+import { findSession, state } from "./state.ts";
+import { pushFeedEvent, pushSessionPatch, pushSessionRemove } from "./mutations.ts";
 import { getAgentSession, unregisterAgentSession } from "./agent-registry.ts";
 import { removeWorktree } from "./git-worktree.ts";
 
@@ -26,18 +26,12 @@ export function togglePause(sid: string): void {
   }
 }
 
-// Stopping interrupts and closes the local Agent SDK process, then removes
-// the session's git worktree (any uncommitted work is auto-committed first —
-// see git-worktree.ts) while always keeping the branch. That's a real,
-// irreversible cleanup step, so — same as before — this deliberately carries
-// no undo rather than showing a misleading "Undo" link.
-export function stopSession(sid: string): void {
-  const session = findSession(sid);
-  if (session.status === "stopped" || session.status === "done") return;
-
-  pushSessionPatch(sid, { status: "stopped", statusLine: "Stopped by you", phase: "stopped" });
-  pushFeedEvent({ sid, kind: "info", own: true, verb: "stopped by you" });
-
+// Interrupts and closes the local Agent SDK process (if one is still
+// running), then removes the session's git worktree — any uncommitted work
+// is auto-committed first (see git-worktree.ts) — while always keeping the
+// branch. Shared by stopSession and deleteSession: both are real,
+// irreversible cleanup steps, so neither carries an undo.
+function terminateAgentProcess(sid: string): void {
   const handle = getAgentSession(sid);
   if (!handle) return;
   unregisterAgentSession(sid);
@@ -50,6 +44,31 @@ export function stopSession(sid: string): void {
   })().catch((err) => {
     pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to clean up worktree: ${String(err)}` });
   });
+}
+
+export function stopSession(sid: string): void {
+  const session = findSession(sid);
+  if (session.status === "stopped" || session.status === "done") return;
+
+  pushSessionPatch(sid, { status: "stopped", statusLine: "Stopped by you", phase: "stopped" });
+  pushFeedEvent({ sid, kind: "info", own: true, verb: "stopped by you" });
+  terminateAgentProcess(sid);
+}
+
+// Deleting terminates the same way Stop does, but the session also
+// disappears from every list instead of sticking around in a "stopped"
+// state. Past feed events referencing this session id are left in place as
+// history — the feed already tolerates events whose session no longer
+// exists (e.g. any event rendered after a stop-and-forget).
+export function deleteSession(sid: string): void {
+  const session = state.sessions.find((s) => s.id === sid);
+  if (!session) return;
+
+  if (session.status !== "stopped" && session.status !== "done") {
+    terminateAgentProcess(sid);
+  }
+  pushFeedEvent({ sid, kind: "info", own: true, verb: "deleted by you" });
+  pushSessionRemove(sid);
 }
 
 export function sendMessage(sid: string, text: string): void {

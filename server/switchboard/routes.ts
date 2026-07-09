@@ -1,14 +1,15 @@
 import { Hono } from "jsr:@hono/hono";
 import { streamSSE } from "jsr:@hono/hono/streaming";
-import type { Effort, Model, Snapshot } from "../../src/switchboard/types.ts";
+import type { Effort, McpTransport, Model, Snapshot, TeamCoordination } from "../../src/switchboard/types.ts";
 import { state } from "./state.ts";
 import { subscribe } from "./bus.ts";
 import { applyAltFix, approveEvent, denyEvent, retryEvent } from "./resolutions.ts";
-import { sendMessage, stopSession, togglePause } from "./session-actions.ts";
+import { deleteSession, sendMessage, stopSession, togglePause } from "./session-actions.ts";
 import {
   cancelMove,
   cancelPendingEffort,
   cancelPendingModel,
+  deleteTeam,
   makeLead,
   queueEffortChange,
   queueModelChange,
@@ -16,11 +17,14 @@ import {
 } from "./team-actions.ts";
 import { approveArtifact, requestChanges } from "./review-actions.ts";
 import { revokeGrant } from "./grant-actions.ts";
-import { spawnIntoTeam, spawnSolo, spawnTeam } from "./spawn-actions.ts";
+import { spawnIntoTeam, spawnSolo, spawnTeam, startWorkers } from "./spawn-actions.ts";
+import { addMcpConfig, deleteMcpConfig } from "./mcp-actions.ts";
 import { undoAction } from "./undo.ts";
 
 const MODELS: Model[] = ["haiku", "sonnet", "opus"];
 const EFFORTS: Effort[] = ["low", "medium", "high"];
+const MCP_TRANSPORTS: McpTransport[] = ["stdio", "http", "sse"];
+const TEAM_COORDINATIONS: TeamCoordination[] = ["classic", "sequenced", "autonomous"];
 
 function parseModel(value: unknown): Model {
   return MODELS.includes(value as Model) ? (value as Model) : "sonnet";
@@ -30,8 +34,29 @@ function parseEffort(value: unknown): Effort {
   return EFFORTS.includes(value as Effort) ? (value as Effort) : "medium";
 }
 
+function parseTransport(value: unknown): McpTransport {
+  return MCP_TRANSPORTS.includes(value as McpTransport) ? (value as McpTransport) : "stdio";
+}
+
+function parseCoordination(value: unknown): TeamCoordination {
+  return TEAM_COORDINATIONS.includes(value as TeamCoordination) ? (value as TeamCoordination) : "classic";
+}
+
+function parseStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function parseStringRecord(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
 // No seed data and no simulator — every session in state now originates from
-// a real spawn (POST /sessions), backed by a live Managed Agents session.
+// a real spawn (POST /sessions), backed by a live Claude Agent SDK process.
 export const switchboardApp = new Hono();
 
 switchboardApp.get("/snapshot", (c) => c.json<Snapshot>(state));
@@ -135,6 +160,21 @@ switchboardApp.post("/sessions/:id/make-lead", (c) => {
   return c.body(null, 204);
 });
 
+switchboardApp.delete("/sessions/:id", (c) => {
+  deleteSession(c.req.param("id"));
+  return c.body(null, 204);
+});
+
+switchboardApp.delete("/teams/:id", (c) => {
+  deleteTeam(c.req.param("id"));
+  return c.body(null, 204);
+});
+
+switchboardApp.post("/teams/:id/start-workers", (c) => {
+  startWorkers(c.req.param("id"));
+  return c.body(null, 204);
+});
+
 switchboardApp.post("/events/:id/approve-artifact", (c) => {
   approveArtifact(c.req.param("id"));
   return c.body(null, 204);
@@ -160,6 +200,9 @@ switchboardApp.post("/sessions", async (c) => {
     const goal = typeof body.goal === "string" ? body.goal : "";
     const dir = typeof body.dir === "string" ? body.dir.trim() : "";
     const baseRef = typeof body.baseRef === "string" && body.baseRef.trim() ? body.baseRef.trim() : "HEAD";
+    const createNew = body.createNew === true;
+    const coordination = parseCoordination(body.coordination);
+    const mcpConfigIds = parseStringArray(body.mcpConfigIds);
     const members = Array.isArray(body.members)
       ? body.members.map((m) => {
         const member = m as Record<string, unknown>;
@@ -170,7 +213,7 @@ switchboardApp.post("/sessions", async (c) => {
         };
       })
       : [];
-    spawnTeam(teamName, goal, dir, baseRef, members);
+    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members);
     return c.body(null, 204);
   }
 
@@ -185,7 +228,28 @@ switchboardApp.post("/sessions", async (c) => {
 
   const dir = typeof body.dir === "string" ? body.dir.trim() : "";
   const baseRef = typeof body.baseRef === "string" && body.baseRef.trim() ? body.baseRef.trim() : "HEAD";
-  spawnSolo(task, model, effort, dir, baseRef);
+  const createNew = body.createNew === true;
+  const mcpConfigIds = parseStringArray(body.mcpConfigIds);
+  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds);
+  return c.body(null, 204);
+});
+
+switchboardApp.post("/mcp-configs", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  addMcpConfig({
+    name: typeof body.name === "string" ? body.name : "",
+    transport: parseTransport(body.transport),
+    command: typeof body.command === "string" ? body.command : "",
+    args: parseStringArray(body.args),
+    env: parseStringRecord(body.env),
+    url: typeof body.url === "string" ? body.url : "",
+    headers: parseStringRecord(body.headers),
+  });
+  return c.body(null, 204);
+});
+
+switchboardApp.delete("/mcp-configs/:id", (c) => {
+  deleteMcpConfig(c.req.param("id"));
   return c.body(null, 204);
 });
 
