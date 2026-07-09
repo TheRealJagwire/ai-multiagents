@@ -1,0 +1,159 @@
+:root {
+  /* surfaces */
+  --sb-bg: #faf9f7;
+  --sb-surface: #fff;
+  --sb-surface-2: #f7f5f1;
+  --sb-surface-3: #f1efeb;
+
+  /* borders */
+  --sb-border: #e7e4de;
+  --sb-border-2: #eceae4;
+  --sb-border-3: #e0ddd6;
+
+  /* text */
+  --sb-text-1: #1c1b18;
+  --sb-text-2: #4a4741;
+  --sb-text-3: #6d6a63;
+  --sb-text-4: #8a867d;
+  --sb-text-5: #9a968d;
+  --sb-text-6: #b6b2a8;
+
+  /* primary */
+  --sb-primary: #1c1b18;
+  --sb-primary-hover: #3a3833;
+
+  /* info blue */
+  --sb-blue: #2a6fdb;
+  --sb-blue-dark: #2a5cb8;
+  --sb-blue-tint: #dbe5f5;
+  --sb-blue-tint-2: #eef3fc;
+
+  /* status: running */
+  --sb-running-dot: #3f9d63;
+  --sb-running-bg: #eef7f1;
+  --sb-running-text: #2e7c4d;
+
+  /* status: waiting */
+  --sb-waiting-dot: #d98324;
+  --sb-waiting-bg: #fdf3e2;
+  --sb-waiting-text: #c07018;
+
+  /* status: error */
+  --sb-error-dot: #c4432b;
+  --sb-error-bg: #fdf0ec;
+  --sb-error-text: #b03a24;
+
+  /* status: paused */
+  --sb-paused-dot: #8a867d;
+  --sb-paused-bg: #f1efeb;
+  --sb-paused-text: #6d6a63;
+
+  /* status: stopped */
+  --sb-stopped-dot: #b0776b;
+  --sb-stopped-bg: #f7ece9;
+  --sb-stopped-text: #9a5243;
+
+  /* status: done */
+  --sb-done-dot: #b6b2a8;
+  --sb-done-bg: #f1efeb;
+  --sb-done-text: #8a867d;
+
+  /* amber / red / green / clay tints */
+  --sb-amber-tint-1: #fdf9f1;
+  --sb-amber-tint-2: #fdf3e2;
+  --sb-amber-tint-3: #ecd9b8;
+  --sb-red-tint-1: #fdf4f1;
+  --sb-red-tint-2: #fdf0ec;
+  --sb-red-tint-3: #ecc7bd;
+  --sb-red-tint-4: #f0d4cd;
+  --sb-green-tint: #eef7f1;
+  --sb-clay-tint: #f7ece9;
+  --sb-toast-accent: #f0b35c;
+
+  /* radii */
+  --sb-radius-icon: 4px;
+  --sb-radius-sm: 7px;
+  --sb-radius-md: 8px;
+  --sb-radius-chip: 10px;
+  --sb-radius-card: 12px;
+  --sb-radius-modal: 14px;
+  --sb-radius-pill: 20px;
+
+  /* shadows */
+  --sb-shadow-card: 0 1px 2px rgba(0, 0, 0, .04);
+  --sb-shadow-pinned: 0 1px 3px rgba(0, 0, 0, .05);
+  --sb-shadow-hover: 0 3px 12px rgba(0, 0, 0, .08);
+  --sb-shadow-pane: -12px 0 32px rgba(28, 27, 24, .12);
+  --sb-shadow-popover: 0 12px 32px rgba(28, 27, 24, .16);
+  --sb-shadow-modal: 0 16px 48px rgba(28, 27, 24, .2);
+  --sb-shadow-toast: 0 8px 24px rgba(28, 27, 24, .3);
+
+  /* fonts */
+  --sb-font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --sb-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+body {
+  margin: 0;
+  background: var(--sb-bg);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #ddd9d1;
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes sbpulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
+@keyframes sbin {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.sb-sbin {
+  animation: sbin .22s ease-out;
+}
+
+.sb-mono {
+  font-family: var(--sb-font-mono);
+}
+
+.sb-dot {
+  display: inline-block;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sb-pulse {
+  animation: sbpulse 2.4s ease-in-out infinite;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--sb-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

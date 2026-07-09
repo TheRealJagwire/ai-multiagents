@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#faf9f7}
+@keyframes sbpulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes sbin{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-thumb{background:#ddd9d1;border-radius:4px}
+*::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+
+<div style="height:100vh;display:flex;flex-direction:column;background:#faf9f7;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#1c1b18;overflow:hidden" data-screen-label="Switchboard v3">
+
+  <!-- top bar -->
+  <div style="height:52px;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid #e7e4de;background:#fff;flex:none">
+    <div style="font-weight:700;font-size:15px;letter-spacing:-.01em">Switchboard <span style="font-size:10px;font-weight:600;color:#9a968d;background:#f1efeb;padding:2px 7px;border-radius:9px;vertical-align:2px">v3</span></div>
+    <div style="display:flex;gap:2px;background:#f1efeb;border-radius:8px;padding:2px">
+      <sc-for list="{{ tabs }}" as="tb" hint-placeholder-count="3">
+        <div style="{{ tb.style }}" onClick="{{ tb.onClick }}">{{ tb.label }}</div>
+      </sc-for>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#6d6a63"><span style="width:7px;height:7px;border-radius:50%;background:#3f9d63;display:inline-block;animation:sbpulse 2.4s ease-in-out infinite"></span>{{ statusSummary }}</div>
+    <sc-if value="{{ hasGrants }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:6px 12px;border:1px solid #e0ddd6;border-radius:8px;font-size:11.5px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ toggleGrants }}">Grants · {{ grantCount }}</div>
+    </sc-if>
+    <div style="padding:7px 14px;background:#1c1b18;color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ openModal }}">+ New session</div>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0;position:relative">
+
+    <!-- ============ GRANTS PANEL ============ -->
+    <sc-if value="{{ grantsOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;top:10px;right:14px;width:370px;background:#fff;border:1px solid #e0ddd6;border-radius:12px;box-shadow:0 12px 32px rgba(28,27,24,.16);z-index:26;padding:14px 16px;display:flex;flex-direction:column;gap:10px;animation:sbin .18s ease">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;font-weight:700">Session permissions</span>
+          <span style="flex:1"></span>
+          <span style="font-size:14px;color:#9a968d;cursor:pointer;padding:2px 5px" style-hover="color:#1c1b18" onClick="{{ closeGrants }}">✕</span>
+        </div>
+        <div style="font-size:11.5px;color:#8a867d;line-height:1.45">Patterns agents may run without asking. Grants end when their session ends.</div>
+        <sc-if value="{{ noGrants }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12px;color:#9a968d;padding:6px 0">No active grants.</div>
+        </sc-if>
+        <sc-for list="{{ grantRows }}" as="g" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;gap:10px;border:1px solid #eceae4;border-radius:9px;padding:9px 11px">
+            <div style="min-width:0;flex:1"><div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#1c1b18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.pattern }}</div><div style="font-size:10.5px;color:#9a968d;padding-top:2px">{{ g.sub }}</div></div>
+            <span style="font-size:11px;font-weight:600;color:#b03a24;border:1px solid #f0d4cd;padding:4px 11px;border-radius:7px;cursor:pointer;flex:none" style-hover="background:#fdf4f1" onClick="{{ g.revoke }}">Revoke</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- left rail (dynamic groups) -->
+    <div style="width:238px;flex:none;border-right:1px solid #e7e4de;background:#fff;padding:14px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto">
+      <sc-for list="{{ railGroups }}" as="grp" hint-placeholder-count="2">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="{{ grp.headStyle }}">{{ grp.title }}</div>
+          <sc-for list="{{ grp.sessions }}" as="s" hint-placeholder-count="4">
+            <div style="{{ s.rowStyle }}" style-hover="background:#f4f2ee" onClick="{{ s.select }}">
+              <span style="{{ s.dotStyle }}"></span>
+              <div style="min-width:0"><div style="{{ s.nameStyle }}">{{ s.name }}</div><div style="{{ s.subStyle }}">{{ s.statusLine }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- ============ FEED TAB ============ -->
+    <sc-if value="{{ showFeed }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;min-width:0;overflow-y:auto;padding:18px 26px;display:flex;flex-direction:column">
+
+      <sc-if value="{{ hasPinned }}" hint-placeholder-val="{{ true }}">
+        <div style="margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
+            <span style="font-size:13px;font-weight:700">Needs you</span>
+            <span style="{{ needsBadgeStyle }}">{{ needsCount }}</span>
+            <span style="font-size:11px;color:#9a968d">oldest first · pinned until you decide</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ pinned }}" as="p" hint-placeholder-count="2">
+              <div style="{{ p.cardStyle }}">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+                  <span style="{{ p.dotStyle }}"></span>
+                  <span style="font-size:12.5px;font-weight:600">{{ p.name }}</span>
+                  <span style="font-size:11.5px;color:#9a968d">{{ p.verb }}</span>
+                  <span style="flex:1"></span><span style="font-size:11px;color:#b6b2a8;flex:none">{{ p.time }}</span>
+                </div>
+                <div style="font-size:12px;color:#6d6a63;line-height:1.45;margin-bottom:9px"><b style="color:#4a4741;font-weight:600">Why:</b> {{ p.why }}</div>
+                <sc-if value="{{ p.hasCommand }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;background:#f7f5f1;border:1px solid #eceae4;border-radius:8px;padding:9px 12px;color:#4a4741;margin-bottom:9px">{{ p.command }}</div>
+                </sc-if>
+                <sc-if value="{{ p.hasBody }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:12.5px;color:#4a4741;line-height:1.45;margin-bottom:9px">{{ p.body }}</div>
+                </sc-if>
+                <div style="display:flex;gap:6px;margin-bottom:11px;flex-wrap:wrap;align-items:center">
+                  <sc-for list="{{ p.chipsV }}" as="c" hint-placeholder-count="2">
+                    <span style="font-size:10.5px;font-weight:600;color:#2e7c4d;background:#eef7f1;padding:3px 9px;border-radius:10px" title="Verified by the sandbox">✓ {{ c }}</span>
+                  </sc-for>
+                  <sc-for list="{{ p.chipsC }}" as="c" hint-placeholder-count="2">
+                    <span style="font-size:10.5px;font-weight:500;color:#8a867d;background:#fff;border:1px dashed #d5d1c8;padding:3px 9px;border-radius:10px" title="Claimed by the agent — not verified">agent: {{ c }}</span>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ p.isApproval }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <div style="padding:6px 16px;background:#1c1b18;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ p.approve }}">Approve once</div>
+                    <div style="padding:6px 14px;border:1px solid #e0ddd6;border-radius:8px;font-size:12px;font-weight:600;color:#4a4741;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ p.allowSession }}">Allow this pattern for session</div>
+                    <div style="padding:6px 14px;border:1px solid #e0ddd6;border-radius:8px;font-size:12px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ p.deny }}">Deny</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ p.isError }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <div style="padding:6px 16px;background:#1c1b18;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ p.retry }}">Retry now</div>
+                    <div style="padding:6px 14px;border:1px solid #e0ddd6;border-radius:8px;font-size:12px;font-weight:600;color:#4a4741;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ p.altFix }}">Try smaller batches</div>
+                    <div style="padding:6px 14px;border:1px solid #e0ddd6;border-radius:8px;font-size:12px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ p.open }}">Open session</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ p.isReview }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <div style="padding:6px 16px;background:#1c1b18;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ p.openReview }}">Open review</div>
+                    <div style="padding:6px 14px;border:1px solid #e0ddd6;border-radius:8px;font-size:12px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ p.approveArt }}">Approve without reading</div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+            <sc-if value="{{ pinnedHasMore }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:11.5px;font-weight:600;color:#2a6fdb;cursor:pointer;padding:2px 4px;width:fit-content" onClick="{{ togglePinnedAll }}">{{ pinnedMoreLabel }}</div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:700">Activity</div>
+        <sc-if value="{{ hasUnread }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size:10.5px;font-weight:700;color:#fff;background:#d98324;padding:2px 8px;border-radius:10px">{{ unreadCount }} new</span>
+        </sc-if>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <input style="border:1px solid #e0ddd6;border-radius:20px;padding:4px 12px;font-size:11.5px;width:130px;outline:none;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#1c1b18;background:#fff" placeholder="Search events…" value="{{ searchText }}" onChange="{{ onSearch }}">
+          <sc-if value="{{ hasSessionFilter }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:11.5px;font-weight:600;background:#2a6fdb;color:#fff;border-radius:20px;cursor:pointer" onClick="{{ clearSessionFilter }}">{{ sessionFilterLabel }} ✕</div>
+          </sc-if>
+          <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+            <div style="{{ f.style }}" onClick="{{ f.onClick }}">{{ f.label }}</div>
+          </sc-for>
+          <sc-if value="{{ hasUnread }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:4px 10px;font-size:11.5px;font-weight:600;color:#2a6fdb;cursor:pointer;border-radius:20px" style-hover="background:#eef3fc" onClick="{{ markCaughtUp }}">Mark caught up</div>
+          </sc-if>
+        </div>
+      </div>
+
+      <sc-if value="{{ showDigest }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1px solid #dbe5f5;border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:12.5px;font-weight:700;color:#2a5cb8">While you were away</span>
+            <span style="font-size:11px;color:#9a968d">{{ digestMeta }}</span>
+            <span style="flex:1"></span>
+            <span style="font-size:11px;font-weight:600;color:#2a6fdb;cursor:pointer" onClick="{{ dismissDigest }}">Dismiss</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ digestLines }}" as="d" hint-placeholder-count="3">
+              <div style="font-size:12px;color:#4a4741;line-height:1.4;cursor:pointer" style-hover="color:#1c1b18" onClick="{{ d.jump }}"><b style="font-weight:600;text-decoration:underline;text-decoration-color:#d5d1c8;text-underline-offset:2px">{{ d.name }}</b> — {{ d.text }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="display:flex;flex-direction:column;gap:8px;padding-bottom:24px">
+        <sc-if value="{{ feedEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;padding:48px 0;color:#9a968d;font-size:13px">Nothing here — you're all caught up.</div>
+        </sc-if>
+        <sc-for list="{{ feedEvents }}" as="ev" hint-placeholder-count="6">
+          <div>
+            <sc-if value="{{ ev.isDivider }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 0">
+                <div style="flex:1;height:1px;background:#e0ddd6"></div>
+                <span style="font-size:10.5px;font-weight:600;color:#9a968d;letter-spacing:.05em">CAUGHT UP TO HERE</span>
+                <div style="flex:1;height:1px;background:#e0ddd6"></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ ev.compact }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ ev.rowStyle }}">
+                <span style="{{ ev.dotStyle }}"></span>
+                <span style="font-size:12px;color:#6d6a63"><b style="color:#1c1b18;cursor:pointer" onClick="{{ ev.filterSession }}">{{ ev.name }}</b> {{ ev.verb }}</span>
+                <span style="flex:1"></span><span style="font-size:11px;color:#b6b2a8;flex:none">{{ ev.time }}</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ ev.isCard }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ ev.cardStyle }}">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <span style="{{ ev.dotStyle }}"></span>
+                  <span style="font-size:12.5px;font-weight:600;cursor:pointer" onClick="{{ ev.filterSession }}">{{ ev.name }}</span>
+                  <span style="font-size:11.5px;color:#9a968d">{{ ev.verb }}</span>
+                  <span style="flex:1"></span><span style="font-size:11px;color:#b6b2a8;flex:none">{{ ev.time }}</span>
+                </div>
+                <sc-if value="{{ ev.hasBody }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:12.5px;color:#4a4741;line-height:1.45">{{ ev.body }}</div>
+                </sc-if>
+                <sc-if value="{{ ev.hasArtifact }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:10px;background:#f7f5f1;border:1px solid #eceae4;border-radius:8px;padding:10px 12px;cursor:pointer" style-hover="border-color:#d5d1c8;background:#f4f1ec" onClick="{{ ev.openArt }}">
+                    <div style="width:30px;height:36px;background:#fff;border:1px solid #e0ddd6;border-radius:4px;flex:none;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#9a968d">{{ ev.artExt }}</div>
+                    <div><div style="font-size:12.5px;font-weight:600">{{ ev.artName }}</div><div style="font-size:11px;color:#9a968d">{{ ev.artMeta }}</div></div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ SESSIONS TAB ============ -->
+    <sc-if value="{{ showSessions }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-width:0;overflow:auto;padding:20px 26px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:16px">All sessions</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+        <sc-for list="{{ allSessions }}" as="s" hint-placeholder-count="8">
+          <div style="background:#fff;border:1px solid #e7e4de;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:9px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.04)" style-hover="box-shadow:0 3px 12px rgba(0,0,0,.08)" onClick="{{ s.select }}">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="{{ s.dotStyle }}"></span>
+              <span style="font-size:13px;font-weight:600">{{ s.name }}</span>
+              <span style="flex:1"></span>
+              <span style="{{ s.pillStyle }}">{{ s.statusWord }}</span>
+            </div>
+            <div style="font-size:12px;color:#6d6a63;line-height:1.4;min-height:34px">{{ s.statusLine }}</div>
+            <div style="display:flex;gap:3px">
+              <sc-for list="{{ s.segs }}" as="g" hint-placeholder-count="5">
+                <div style="{{ g.style }}"></div>
+              </sc-for>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:#9a968d;font-family:'IBM Plex Mono',monospace"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.meta }}</span><span style="flex:none">{{ s.cost }}</span></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ TEAMS TAB ============ -->
+    <sc-if value="{{ showTeams }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-width:0;overflow:auto;padding:20px 26px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;max-width:640px;min-width:420px">
+        <div style="font-size:15px;font-weight:700">Teams</div>
+        <div style="flex:1"></div>
+        <div style="padding:6px 14px;border:1px solid #e0ddd6;background:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ openTeamModal }}">+ New team</div>
+      </div>
+      <sc-for list="{{ teamCards }}" as="tc" hint-placeholder-count="1">
+        <div style="background:#fff;border:1px solid #e7e4de;border-radius:12px;padding:18px 20px;max-width:640px;min-width:420px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:13.5px;font-weight:700">{{ tc.name }}</span>
+            <span style="font-size:11px;color:#9a968d">{{ tc.meta }}</span>
+            <span style="flex:1"></span>
+            <span style="font-size:11.5px;font-weight:600;color:#2a6fdb;cursor:pointer" onClick="{{ tc.addMember }}">+ Add member</span>
+          </div>
+          <div style="font-size:12px;color:#6d6a63;margin-bottom:14px">{{ tc.goal }}</div>
+          <sc-for list="{{ tc.members }}" as="t" hint-placeholder-count="4">
+            <div>
+              <div style="{{ t.rowStyle }}" style-hover="background:#f7f5f1" onClick="{{ t.select }}">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#c9c5bc;width:18px;flex:none">{{ t.branch }}</span>
+                <span style="{{ t.dotStyle }}"></span>
+                <span style="font-size:12.5px;font-weight:600">{{ t.name }}</span>
+                <span style="font-size:11px;color:#9a968d">{{ t.role }}</span>
+                <span style="font-size:10.5px;color:#9a968d;font-family:'IBM Plex Mono',monospace">{{ t.modelTag }}</span>
+                <sc-if value="{{ t.dep }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:10.5px;font-weight:600;color:#c07018;background:#fdf3e2;padding:2px 8px;border-radius:9px">{{ t.dep }}</span>
+                </sc-if>
+                <span style="flex:1"></span>
+                <span style="font-size:11px;color:#9a968d">{{ t.statusLine }}</span>
+                <span style="{{ t.gearStyle }}" onClick="{{ t.toggleManage }}">⋯</span>
+              </div>
+              <sc-if value="{{ t.expanded }}" hint-placeholder-val="{{ false }}">
+                <div style="margin:2px 0 10px 27px;background:#f7f5f1;border:1px solid #eceae4;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:9px;animation:sbin .18s ease">
+                  <div style="display:flex;gap:16px;flex-wrap:wrap">
+                    <div style="display:flex;align-items:center;gap:5px">
+                      <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">MODEL</span>
+                      <sc-for list="{{ t.modelChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:5px">
+                      <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">EFFORT</span>
+                      <sc-for list="{{ t.effortChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                    </div>
+                  </div>
+                  <sc-if value="{{ t.hasPendingNote }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-direction:column;gap:3px">
+                      <sc-for list="{{ t.pendingNotes }}" as="pn" hint-placeholder-count="1">
+                        <div style="display:flex;gap:8px;align-items:center;font-size:11px;font-weight:600;color:#c07018"><span>⏳ {{ pn.text }}</span><span style="cursor:pointer;text-decoration:underline" onClick="{{ pn.cancel }}">cancel</span></div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ t.moveConfirmActive }}" hint-placeholder-val="{{ false }}">
+                    <div style="background:#fdf9f1;border:1px solid #ecd9b8;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;animation:sbin .18s ease">
+                      <div style="font-size:12px;font-weight:700">Move to {{ t.moveTargetLabel }}?</div>
+                      <sc-for list="{{ t.moveLines }}" as="ln" hint-placeholder-count="2">
+                        <div style="{{ ln.style }}">{{ ln.text }}</div>
+                      </sc-for>
+                      <div style="display:flex;gap:8px;padding-top:3px">
+                        <span style="padding:5px 14px;background:#1c1b18;color:#fff;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ t.confirmMove }}">Move at next step</span>
+                        <span style="padding:5px 14px;border:1px solid #e0ddd6;background:#fff;border-radius:7px;font-size:11.5px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ t.cancelMove }}">Cancel</span>
+                      </div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ t.moveConfirmInactive }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                      <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">MOVE</span>
+                      <sc-for list="{{ t.moveBtns }}" as="mb" hint-placeholder-count="2">
+                        <span style="font-size:11px;font-weight:600;color:#4a4741;border:1px solid #e0ddd6;background:#fff;padding:3px 10px;border-radius:7px;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ mb.onClick }}">{{ mb.label }}</span>
+                      </sc-for>
+                      <sc-if value="{{ t.canLead }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:11px;font-weight:600;color:#4a4741;border:1px solid #e0ddd6;background:#fff;padding:3px 10px;border-radius:7px;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ t.makeLead }}">Make lead</span>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                  <div style="font-size:10px;color:#9a968d">Changes apply at the next step boundary · effort sets thinking + retry budget</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+      <div style="background:#fff;border:1px solid #e7e4de;border-radius:12px;padding:18px 20px;max-width:640px;min-width:420px">
+        <div style="font-size:13.5px;font-weight:700;margin-bottom:12px">Independent sessions</div>
+        <sc-if value="{{ noIndep }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12px;color:#9a968d">None right now.</div>
+        </sc-if>
+        <sc-for list="{{ indepTree }}" as="t" hint-placeholder-count="4">
+          <div>
+            <div style="{{ t.rowStyle }}" style-hover="background:#f7f5f1" onClick="{{ t.select }}">
+              <span style="{{ t.dotStyle }}"></span>
+              <span style="font-size:12.5px;font-weight:600">{{ t.name }}</span>
+              <span style="font-size:10.5px;color:#9a968d;font-family:'IBM Plex Mono',monospace">{{ t.modelTag }}</span>
+              <span style="flex:1"></span>
+              <span style="font-size:11px;color:#9a968d">{{ t.statusLine }}</span>
+              <span style="{{ t.gearStyle }}" onClick="{{ t.toggleManage }}">⋯</span>
+            </div>
+            <sc-if value="{{ t.expanded }}" hint-placeholder-val="{{ false }}">
+              <div style="margin:2px 0 10px 10px;background:#f7f5f1;border:1px solid #eceae4;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:9px;animation:sbin .18s ease">
+                <div style="display:flex;gap:16px;flex-wrap:wrap">
+                  <div style="display:flex;align-items:center;gap:5px">
+                    <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">MODEL</span>
+                    <sc-for list="{{ t.modelChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:5px">
+                    <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">EFFORT</span>
+                    <sc-for list="{{ t.effortChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                  </div>
+                </div>
+                <sc-if value="{{ t.hasPendingNote }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:3px">
+                    <sc-for list="{{ t.pendingNotes }}" as="pn" hint-placeholder-count="1">
+                      <div style="display:flex;gap:8px;align-items:center;font-size:11px;font-weight:600;color:#c07018"><span>⏳ {{ pn.text }}</span><span style="cursor:pointer;text-decoration:underline" onClick="{{ pn.cancel }}">cancel</span></div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ t.moveConfirmActive }}" hint-placeholder-val="{{ false }}">
+                  <div style="background:#fdf9f1;border:1px solid #ecd9b8;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;animation:sbin .18s ease">
+                    <div style="font-size:12px;font-weight:700">Move to {{ t.moveTargetLabel }}?</div>
+                    <sc-for list="{{ t.moveLines }}" as="ln" hint-placeholder-count="2">
+                      <div style="{{ ln.style }}">{{ ln.text }}</div>
+                    </sc-for>
+                    <div style="display:flex;gap:8px;padding-top:3px">
+                      <span style="padding:5px 14px;background:#1c1b18;color:#fff;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ t.confirmMove }}">Move at next step</span>
+                      <span style="padding:5px 14px;border:1px solid #e0ddd6;background:#fff;border-radius:7px;font-size:11.5px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ t.cancelMove }}">Cancel</span>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ t.moveConfirmInactive }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">MOVE</span>
+                    <sc-for list="{{ t.moveBtns }}" as="mb" hint-placeholder-count="2">
+                      <span style="font-size:11px;font-weight:600;color:#4a4741;border:1px solid #e0ddd6;background:#fff;padding:3px 10px;border-radius:7px;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ mb.onClick }}">{{ mb.label }}</span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <div style="font-size:10px;color:#9a968d">Changes apply at the next step boundary · effort sets thinking + retry budget</div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ SESSION SPLIT PANE ============ -->
+    <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="width:clamp(340px,44vw,440px);flex:none;background:#fff;border-left:1px solid #e0ddd6;display:flex;flex-direction:column;overflow:hidden;animation:sbin .2s ease">
+        <div style="padding:16px 20px 12px;border-bottom:1px solid #eceae4;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="{{ selDotStyle }}"></span>
+            <span style="font-size:14.5px;font-weight:700">{{ selName }}</span>
+            <span style="{{ selPillStyle }}">{{ selStatusWord }}</span>
+            <span style="flex:1"></span>
+            <span style="font-size:16px;color:#9a968d;cursor:pointer;padding:2px 6px" style-hover="color:#1c1b18" onClick="{{ closeDrawer }}">✕</span>
+          </div>
+          <div style="display:flex;gap:12px;font-size:11.5px;color:#8a867d;flex-wrap:wrap">
+            <span>{{ selGroupLine }}</span><span>{{ selModelLine }}</span><span>{{ selCost }}</span>
+            <sc-if value="{{ selHasGrants }}" hint-placeholder-val="{{ false }}">
+              <span style="cursor:pointer;text-decoration:underline" onClick="{{ openGrantsPanel }}">{{ selGrantLine }}</span>
+            </sc-if>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;gap:3px;flex:1;max-width:150px">
+              <sc-for list="{{ selSegs }}" as="g" hint-placeholder-count="5">
+                <div style="{{ g.style }}"></div>
+              </sc-for>
+            </div>
+            <span style="font-size:11px;color:#8a867d;font-family:'IBM Plex Mono',monospace">{{ selPhaseLine }}</span>
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;padding-top:2px">
+            <div style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">MODEL</span>
+              <sc-for list="{{ selModelChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">EFFORT</span>
+              <sc-for list="{{ selEffortChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+            </div>
+          </div>
+          <sc-if value="{{ selHasPending }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <sc-for list="{{ selPendingNotes }}" as="pn" hint-placeholder-count="1">
+                <div style="display:flex;gap:8px;align-items:center;font-size:11px;font-weight:600;color:#c07018"><span>⏳ {{ pn.text }}</span><span style="cursor:pointer;text-decoration:underline" onClick="{{ pn.cancel }}">cancel</span></div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ selDep }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:11px;font-weight:600;color:#c07018;background:#fdf3e2;padding:4px 10px;border-radius:8px;width:fit-content">{{ selDep }}</div>
+          </sc-if>
+          <div style="display:flex;gap:8px;padding-top:2px">
+            <span style="padding:5px 13px;border:1px solid #e0ddd6;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ togglePause }}">{{ pauseLabel }}</span>
+            <span style="padding:5px 13px;border:1px solid #e0ddd6;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer" style-hover="background:#f4f2ee">Hand off</span>
+            <span style="flex:1"></span>
+            <sc-if value="{{ confirmStop }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:11.5px;color:#6d6a63;align-self:center">Stop this session?</span>
+              <span style="padding:5px 13px;background:#c4432b;color:#fff;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer" onClick="{{ stopSession }}">Confirm stop</span>
+              <span style="padding:5px 13px;border:1px solid #e0ddd6;border-radius:7px;font-size:11.5px;font-weight:600;color:#6d6a63;cursor:pointer" onClick="{{ cancelStop }}">Keep running</span>
+            </sc-if>
+            <sc-if value="{{ notConfirmStop }}" hint-placeholder-val="{{ true }}">
+              <span style="padding:5px 13px;border:1px solid #f0d4cd;color:#b03a24;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer" style-hover="background:#fdf4f1" onClick="{{ askStop }}">Stop</span>
+            </sc-if>
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;background:#fbfaf8">
+          <sc-for list="{{ selTranscript }}" as="m" hint-placeholder-count="4">
+            <div>
+              <sc-if value="{{ m.isNote }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:center;text-align:center;font-size:10.5px;color:#9a968d;background:#f1efeb;padding:3px 10px;border-radius:10px;width:fit-content;margin:0 auto">{{ m.text }}</div>
+              </sc-if>
+              <sc-if value="{{ m.isText }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:12.5px;line-height:1.5;color:#4a4741">{{ m.text }}</div>
+              </sc-if>
+              <sc-if value="{{ m.isUser }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:12.5px;line-height:1.5;color:#1c1b18;background:#f1efeb;border-radius:10px;padding:9px 13px;margin-left:48px">{{ m.text }}</div>
+              </sc-if>
+              <sc-if value="{{ m.isTool }}" hint-placeholder-val="{{ false }}">
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;background:#f4f2ee;border:1px solid #eceae4;border-radius:8px;padding:8px 11px;color:#6d6a63">{{ m.text }}</div>
+              </sc-if>
+              <sc-if value="{{ m.isPermission }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#fdf9f1;border:1px solid #ecd9b8;border-radius:10px;padding:12px 14px">
+                  <div style="font-size:12px;font-weight:600;margin-bottom:6px">Permission needed</div>
+                  <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#4a4741;margin-bottom:10px">{{ m.command }}</div>
+                  <sc-if value="{{ m.unresolved }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;gap:8px">
+                      <span style="padding:6px 16px;background:#1c1b18;color:#fff;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer" onClick="{{ m.approve }}">Approve once</span>
+                      <span style="padding:6px 16px;border:1px solid #e0ddd6;border-radius:7px;font-size:12px;font-weight:600;color:#6d6a63;cursor:pointer" onClick="{{ m.deny }}">Deny</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ m.resolvedLabel }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:11.5px;font-weight:600;color:#3f9d63">{{ m.resolvedLabel }}</div>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #eceae4;padding:12px 20px;display:flex;gap:10px;align-items:center;background:#fff">
+          <input style="flex:1;border:1px solid #e0ddd6;border-radius:9px;padding:9px 13px;font-size:12.5px;font-family:'IBM Plex Sans',system-ui,sans-serif;outline:none;color:#1c1b18" placeholder="{{ chatPlaceholder }}" value="{{ chatText }}" onChange="{{ onChat }}" onKeyDown="{{ chatKey }}">
+          <div style="padding:9px 16px;background:#1c1b18;color:#fff;border-radius:9px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ sendChat }}">Send</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ NEW SESSION / TEAM MODAL ============ -->
+    <sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(28,27,24,.28);display:flex;align-items:center;justify-content:center;z-index:10" onClick="{{ closeModal }}">
+        <div style="width:560px;max-height:86%;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(28,27,24,.2);padding:22px 24px;display:flex;flex-direction:column;gap:14px;animation:sbin .2s ease" onClick="{{ stopProp }}">
+          <div style="font-size:15px;font-weight:700">{{ modalTitle }}</div>
+          <div style="display:flex;gap:8px">
+            <sc-for list="{{ modalModes }}" as="md" hint-placeholder-count="3">
+              <div style="{{ md.style }}" onClick="{{ md.onClick }}">{{ md.label }}</div>
+            </sc-for>
+          </div>
+
+          <sc-if value="{{ modalIsNewTeam }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11.5px;font-weight:600;color:#6d6a63">Team name</div>
+              <input style="border:1px solid #e0ddd6;border-radius:9px;padding:9px 13px;font-size:12.5px;font-family:'IBM Plex Sans',system-ui,sans-serif;outline:none;color:#1c1b18" placeholder="e.g. Onboarding revamp" value="{{ teamName }}" onChange="{{ onTeamName }}">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11.5px;font-weight:600;color:#6d6a63">Team goal</div>
+              <textarea style="border:1px solid #e0ddd6;border-radius:9px;padding:10px 13px;font-size:12.5px;font-family:'IBM Plex Sans',system-ui,sans-serif;outline:none;resize:none;height:54px;color:#1c1b18" placeholder="What should this team accomplish?" value="{{ promptText }}" onChange="{{ onPrompt }}"></textarea>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11.5px;font-weight:600;color:#6d6a63">Members</div>
+              <sc-for list="{{ draftRows }}" as="dm" hint-placeholder-count="2">
+                <div style="border:1px solid #eceae4;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:9px;background:#fbfaf8">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="{{ dm.roleStyle }}">{{ dm.role }}</span>
+                    <input style="flex:1;border:1px solid #e0ddd6;border-radius:7px;padding:6px 10px;font-size:12px;font-family:'IBM Plex Sans',system-ui,sans-serif;outline:none;background:#fff;color:#1c1b18" placeholder="{{ dm.ph }}" value="{{ dm.task }}" onChange="{{ dm.onTask }}">
+                    <sc-if value="{{ dm.canRemove }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:13px;color:#9a968d;cursor:pointer;padding:0 3px" style-hover="color:#b03a24" onClick="{{ dm.remove }}">✕</span>
+                    </sc-if>
+                  </div>
+                  <div style="display:flex;gap:16px;flex-wrap:wrap">
+                    <div style="display:flex;align-items:center;gap:5px">
+                      <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">MODEL</span>
+                      <sc-for list="{{ dm.modelChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:5px">
+                      <span style="font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#9a968d;margin-right:3px">EFFORT</span>
+                      <sc-for list="{{ dm.effortChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="font-size:12px;font-weight:600;color:#2a6fdb;cursor:pointer;width:fit-content;padding:2px 0" onClick="{{ addDraftMember }}">+ Add member</div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ modalIsSimple }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11.5px;font-weight:600;color:#6d6a63">What should this agent do?</div>
+              <textarea style="border:1px solid #e0ddd6;border-radius:9px;padding:10px 13px;font-size:12.5px;font-family:'IBM Plex Sans',system-ui,sans-serif;outline:none;resize:none;height:74px;color:#1c1b18" placeholder="e.g. Audit our onboarding emails and draft improvements" value="{{ promptText }}" onChange="{{ onPrompt }}"></textarea>
+            </div>
+            <sc-if value="{{ modalIsExisting }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:11.5px;font-weight:600;color:#6d6a63">Team</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <sc-for list="{{ teamPickChips }}" as="c" hint-placeholder-count="1">
+                    <div style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+            <div style="display:flex;gap:24px;flex-wrap:wrap">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:11.5px;font-weight:600;color:#6d6a63">Model</div>
+                <div style="display:flex;gap:5px">
+                  <sc-for list="{{ pickModelChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:11.5px;font-weight:600;color:#6d6a63">Effort</div>
+                <div style="display:flex;gap:5px">
+                  <sc-for list="{{ pickEffortChips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}" onClick="{{ c.onClick }}">{{ c.label }}</span></sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
+            <div style="padding:8px 16px;border:1px solid #e0ddd6;border-radius:8px;font-size:12.5px;font-weight:600;color:#6d6a63;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ closeModal }}">Cancel</div>
+            <div style="padding:8px 18px;background:#1c1b18;color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ spawn }}">{{ spawnLabel }}</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ ARTIFACT REVIEW ============ -->
+    <sc-if value="{{ reviewPanelOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(28,27,24,.28);display:flex;align-items:center;justify-content:center;z-index:12" onClick="{{ closeReview }}">
+        <div style="width:600px;max-height:86%;background:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(28,27,24,.2);display:flex;flex-direction:column;overflow:hidden;animation:sbin .2s ease" onClick="{{ stopProp }}">
+          <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid #eceae4">
+            <div style="width:30px;height:36px;background:#f7f5f1;border:1px solid #e0ddd6;border-radius:4px;flex:none;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#9a968d">{{ revExt }}</div>
+            <div style="min-width:0"><div style="font-size:13.5px;font-weight:700">{{ revTitle }}</div><div style="font-size:11px;color:#9a968d">{{ revMeta }}</div></div>
+            <span style="flex:1"></span>
+            <span style="font-size:16px;color:#9a968d;cursor:pointer;padding:2px 6px" style-hover="color:#1c1b18" onClick="{{ closeReview }}">✕</span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:18px 22px;background:#fbfaf8;display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ revLines }}" as="ln" hint-placeholder-count="6">
+              <div style="{{ ln.style }}">{{ ln.text }}</div>
+            </sc-for>
+          </div>
+          <div style="flex:none;border-top:1px solid #eceae4;padding:14px 20px;display:flex;flex-direction:column;gap:10px;background:#fff">
+            <sc-if value="{{ revUnresolved }}" hint-placeholder-val="{{ false }}">
+              <input style="border:1px solid #e0ddd6;border-radius:9px;padding:9px 13px;font-size:12.5px;font-family:'IBM Plex Sans',system-ui,sans-serif;outline:none;color:#1c1b18" placeholder="Optional note for the agent…" value="{{ revComment }}" onChange="{{ onRevComment }}">
+              <div style="display:flex;gap:8px">
+                <div style="padding:7px 18px;background:#1c1b18;color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3a3833" onClick="{{ approveArtifact }}">Approve artifact</div>
+                <div style="padding:7px 16px;border:1px solid #e0ddd6;border-radius:8px;font-size:12.5px;font-weight:600;color:#4a4741;cursor:pointer" style-hover="background:#f4f2ee" onClick="{{ requestChanges }}">Request changes</div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ revResolvedLabel }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:12px;font-weight:600;color:#6d6a63">{{ revResolvedLabel }}</div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ UNDO TOAST ============ -->
+    <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:#1c1b18;color:#fff;border-radius:10px;padding:10px 8px 10px 16px;display:flex;gap:4px;align-items:center;box-shadow:0 8px 24px rgba(28,27,24,.3);z-index:30;animation:sbin .2s ease">
+        <span style="font-size:12.5px;white-space:nowrap">{{ toastLabel }}</span>
+        <span style="font-size:12.5px;font-weight:700;color:#f0b35c;cursor:pointer;padding:4px 10px;border-radius:6px" style-hover="background:rgba(255,255,255,.12)" onClick="{{ toastUndo }}">Undo</span>
+        <span style="font-size:13px;color:#9a968d;cursor:pointer;padding:4px 8px;border-radius:6px" style-hover="color:#fff" onClick="{{ toastDismiss }}">✕</span>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;liveFeed&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Simulation&quot; },
+  &quot;eventPace&quot;: { &quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 9, &quot;min&quot;: 3, &quot;max&quot;: 30, &quot;step&quot;: 1, &quot;unit&quot;: &quot;s&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Simulation&quot; },
+  &quot;showCosts&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Display&quot; }
+}">
+class Component extends DCLogic {
+  state = {
+    tab: 'feed',
+    filter: 'all',
+    selectedId: null,
+    expandedMemberId: null,
+    moveConfirm: null,
+    toast: null,
+    reviewOpen: null,
+    revComment: '',
+    pinnedShowAll: false,
+    search: '',
+    sessionFilter: null,
+    grantsOpen: false,
+    grants: null,
+    modalOpen: false,
+    modalMode: 'solo',
+    targetTeamId: null,
+    teamName: '',
+    draftMembers: null,
+    memberModel: 'sonnet',
+    memberEffort: 'medium',
+    confirmStop: false,
+    digestDismissed: false,
+    promptText: '',
+    chatText: '',
+    now: Date.now(),
+    lastSeen: 0,
+    teams: null,
+    sessions: null,
+    events: null,
+    transcripts: null,
+    nextId: 100
+  };
+
+  constructor(props) {
+    super(props);
+    const t = Date.now();
+    this.state.lastSeen = t - 16 * 60000;
+    this.state.grants = [
+      { id: 'g1', sid: 'inbox', pattern: 'gmail.archive *', grantedAt: t - 25 * 60000 }
+    ];
+    this.state.teams = [
+      { id: 'release', name: 'Release v2.4', goal: 'Ship the v2.4 release: notes, QA verification, docs.', startedAt: t - 61*60000 }
+    ];
+    this.state.draftMembers = this.freshDraft();
+    this.state.sessions = [
+      { id: 'planner',   name: 'Lead · planner',      short: 'planner',      baseName: 'planner',           teamId: 'release', lead: true,  status: 'running', statusLine: 'Coordinating 3 workers',   phase: 'executing', msDone: 3, msTotal: 5, startedAt: t - 61*60000, cost: 0.82, model: 'opus',   effort: 'high',   ctx: 34, dep: '' },
+      { id: 'changelog', name: 'Worker · changelog',  short: 'changelog',    baseName: 'changelog',         teamId: 'release', lead: false, status: 'running', statusLine: 'Draft ready for review',   phase: 'reviewing', msDone: 3, msTotal: 4, startedAt: t - 48*60000, cost: 0.34, model: 'sonnet', effort: 'medium', ctx: 22, dep: '' },
+      { id: 'qa',        name: 'Worker · QA sweep',   short: 'qa-sweep',     baseName: 'QA sweep',          teamId: 'release', lead: false, status: 'waiting', statusLine: 'Waiting for approval',     phase: 'gated',     msDone: 3, msTotal: 5, startedAt: t - 50*60000, cost: 0.47, model: 'sonnet', effort: 'medium', ctx: 41, dep: 'gates release sign-off' },
+      { id: 'docs',      name: 'Worker · docs',       short: 'docs',         baseName: 'docs',              teamId: 'release', lead: false, status: 'running', statusLine: 'Updating API reference',   phase: 'executing', msDone: 1, msTotal: 4, startedAt: t - 23*60000, cost: 0.29, model: 'sonnet', effort: 'medium', ctx: 18, dep: '' },
+      { id: 'research',  name: 'Market research',     short: 'research',     baseName: 'Market research',   teamId: null,      lead: false, status: 'running', statusLine: 'Synthesizing 14 sources',  phase: 'executing', msDone: 3, msTotal: 5, startedAt: t - 95*60000, cost: 1.10, model: 'opus',   effort: 'high',   ctx: 57, dep: '' },
+      { id: 'pipeline',  name: 'Data pipeline fix',   short: 'pipeline-fix', baseName: 'Data pipeline fix', teamId: null,      lead: false, status: 'error',   statusLine: 'Blocked — error',          phase: 'blocked',   msDone: 2, msTotal: 4, startedAt: t - 40*60000, cost: 0.55, model: 'sonnet', effort: 'medium', ctx: 29, dep: 'needs warehouse access' },
+      { id: 'inbox',     name: 'Inbox triage',        short: 'inbox-triage', baseName: 'Inbox triage',      teamId: null,      lead: false, status: 'running', statusLine: '31 of 90 emails',          phase: 'executing', msDone: 1, msTotal: 3, startedAt: t - 30*60000, cost: 0.18, model: 'haiku',  effort: 'low',    ctx: 12, dep: '' },
+      { id: 'weekly',    name: 'Weekly report',       short: 'weekly-report',baseName: 'Weekly report',     teamId: null,      lead: false, status: 'done',    statusLine: 'Done · 2h ago',            phase: 'done',      msDone: 3, msTotal: 3, startedAt: t - 3*3600000, cost: 0.61, model: 'sonnet', effort: 'medium', ctx: 0,  dep: '' }
+    ];
+    this.state.events = [
+      { id: 'e1', ts: t - 20000,   sid: 'qa',       kind: 'approval', verb: 'wants to run a command', command: 'npm run test:e2e -- --headed --workers=4', grantPattern: 'npm run test:e2e *',
+        why: 'Unit suite is green (214/214). The e2e run is the last gate before it can sign off the release candidate.',
+        chipsV: ['Local env only', 'No prod writes'], chipsC: ['Reversible', '~6 min'], resolved: null },
+      { id: 'e2', ts: t - 4*60000, sid: 'pipeline', kind: 'error',    verb: 'hit an error and stopped',
+        body: 'Connection to warehouse timed out after 3 retries (30s each).',
+        why: 'Likely expired credentials or a network policy change — the agent can retry as-is or reduce batch size to fit a tighter timeout.',
+        chipsV: ['3 attempts made', 'Checkpointed at row 48k'], chipsC: ['Retry is non-destructive'], resolved: null },
+      { id: 'e3', ts: t - 9*60000, sid: 'changelog',kind: 'review', verb: 'requests your review', artName: 'release-notes-v2.4.md', artExt: 'MD', artMeta: 'Draft · 1,240 words',
+        why: 'The worker considers the draft complete. Publishing waits on your sign-off.',
+        body: 'Grouped 47 merged PRs into Features (12), Fixes (28), Internal (7).',
+        chipsV: ['Draft v1', '1,240 words'], chipsC: [], resolved: null,
+        artPreview: [
+          ['v2.4 — July 5, 2026', 'h'],
+          ['Features (12)', 's'],
+          ['• Exports API: three new endpoints for scheduled exports', 'n'],
+          ['• Bulk actions in the queue view', 'n'],
+          ['• SSO domain capture on signup', 'n'],
+          ['Fixes (28)', 's'],
+          ['• Checkout: cart totals recalculate when a coupon is removed', 'n'],
+          ['• Retry-safe webhook delivery on transient 5xx', 'n'],
+          ['• 26 more — full list in the appendix', 'm'],
+          ['Internal (7)', 's'],
+          ['• CI migrated to split test shards (−41% wall time)', 'n']
+        ] },
+      { id: 'e4', ts: t - 12*60000,sid: 'planner',  kind: 'message',  verb: 'reassigned a task to Worker · docs', body: '"QA sweep is blocked on approval — moving the API reference update forward in parallel."' },
+      { id: 'e5', ts: t - 15*60000,sid: 'research', kind: 'info',     verb: 'finished reading 14 sources, started synthesis' },
+      { id: 'e6', ts: t - 18*60000,sid: 'inbox',    kind: 'info',     verb: 'archived 12 newsletters, flagged 2 for reply' },
+      { id: 'e7', ts: t - 21*60000,sid: 'planner',  kind: 'info',     verb: 'spawned Worker · docs (task: api-reference)' },
+      { id: 'e8', ts: t - 2*3600000, sid: 'weekly', kind: 'artifact', verb: 'completed its task', artName: 'weekly-report.pdf', artExt: 'PDF', artMeta: 'Final · delivered',
+        artPreview: [
+          ['Weekly report — w/o June 29', 'h'],
+          ['Three launches shipped. Support volume flat week-over-week; churn 0.8% (−0.2pt).', 'n'],
+          ['Full metrics and charts in the delivered PDF.', 'm']
+        ] }
+    ];
+    this.state.transcripts = {
+      qa: [
+        { k: 'note', text: 'Task from planner: verify v2.4 release candidate' },
+        { k: 'text', text: "I'll start with the unit suite, then flaky-test detection, then e2e. Running unit tests now." },
+        { k: 'tool', text: '▸ npm test — 214 passed, 0 failed (38s)' },
+        { k: 'text', text: 'Two checkout-flow tests passed only on retry — flagging cart.spec:88 and payment.spec:41 as flaky.' },
+        { k: 'perm', eventId: 'e1' }
+      ],
+      planner: [
+        { k: 'note', text: 'Task from you: ship the v2.4 release' },
+        { k: 'text', text: 'Plan: changelog from merged PRs, QA verification of the release candidate, docs update for new endpoints. Spawning three workers.' },
+        { k: 'tool', text: '▸ spawn changelog · qa-sweep · docs' },
+        { k: 'text', text: 'QA is blocked on an e2e approval — I reassigned the API reference forward so docs isn\u2019t idle.' }
+      ],
+      changelog: [
+        { k: 'note', text: 'Task from planner: draft v2.4 release notes' },
+        { k: 'tool', text: '▸ git log --since=v2.3 --merges (47 PRs)' },
+        { k: 'text', text: 'Grouped changes into Features (12), Fixes (28), Internal (7). Draft is ready for your review.' },
+        { k: 'tool', text: '▸ wrote release-notes-v2.4.md (1,240 words)' }
+      ],
+      docs: [
+        { k: 'note', text: 'Task from planner: update API reference' },
+        { k: 'text', text: 'Three new endpoints in v2.4 — documenting request/response schemas and adding examples.' },
+        { k: 'tool', text: '▸ reading openapi.yaml — 3 new paths found' }
+      ],
+      research: [
+        { k: 'note', text: 'Task from you: competitor pricing landscape' },
+        { k: 'tool', text: '▸ read 14 sources (pricing pages, 2 analyst reports)' },
+        { k: 'text', text: 'All 14 sources read. Starting synthesis — I\u2019ll produce a comparison table and a positioning summary.' }
+      ],
+      pipeline: [
+        { k: 'note', text: 'Task from you: fix the nightly backfill failure' },
+        { k: 'tool', text: '▸ psql warehouse — ConnectionError: timeout (30s)' },
+        { k: 'tool', text: '▸ retry 2/3 — timeout · retry 3/3 — timeout' },
+        { k: 'text', text: 'The warehouse isn\u2019t accepting connections. Likely expired credentials or a network policy change. I can retry, or you can rotate credentials first.' }
+      ],
+      inbox: [
+        { k: 'note', text: 'Task from you: triage unread inbox (90)' },
+        { k: 'text', text: 'Rules so far: newsletters → archive, invoices → "Finance" label, anything from your team needing a reply → flag.' },
+        { k: 'tool', text: '▸ archived 12 · labeled 4 · flagged 2 · 31/90 done' }
+      ],
+      weekly: [
+        { k: 'note', text: 'Task from you: compile the weekly report' },
+        { k: 'text', text: 'Done — pulled metrics, summarized the three launches, attached the PDF.' },
+        { k: 'tool', text: '▸ wrote weekly-report.pdf' }
+      ]
+    };
+    this._simPool = [
+      { sid: 'docs',      verb: 'documented POST /v2/exports endpoint' },
+      { sid: 'research',  verb: 'drafted comparison table — 6 competitors, 4 tiers' },
+      { sid: 'inbox',     verb: 'flagged an email from Legal for your reply' },
+      { sid: 'changelog', verb: 'incorporated planner feedback on Features section' },
+      { sid: 'planner',   verb: 'checked in with docs — on track for 15:30' },
+      { sid: 'research',  verb: 'found 2 competitors changed pricing this quarter' },
+      { sid: 'inbox',     verb: 'archived 8 more newsletters · 47/90 done' },
+      { sid: 'docs',      verb: 'added code examples for new endpoints' }
+    ];
+    this._simIdx = 0;
+  }
+
+  freshDraft() {
+    return [
+      { task: '', model: 'opus',   effort: 'high' },
+      { task: '', model: 'sonnet', effort: 'medium' }
+    ];
+  }
+
+  componentDidMount() {
+    const pace = Math.max(3, this.props.eventPace ?? 9) * 1000;
+    this._sim = setInterval(() => {
+      if ((this.props.liveFeed ?? true) === false) return;
+      const p = this._simPool[this._simIdx++ % this._simPool.length];
+      const s = this.state.sessions.find(x => x.id === p.sid);
+      if (!s || s.status !== 'running') return;
+      this.addEvent({ sid: p.sid, kind: 'info', verb: p.verb });
+      this.setState(st => ({
+        sessions: st.sessions.map(x => x.id === p.sid ? { ...x, cost: +(x.cost + 0.02).toFixed(2) } : x)
+      }));
+    }, pace);
+    this._clock = setInterval(() => this.setState({ now: Date.now() }), 20000);
+  }
+  componentWillUnmount() {
+    clearInterval(this._sim); clearInterval(this._clock);
+    clearTimeout(this._toastT); clearTimeout(this._revT); clearTimeout(this._pubT);
+    if (this._pt) Object.keys(this._pt).forEach(k => clearTimeout(this._pt[k]));
+    if (this._mt) Object.keys(this._mt).forEach(k => clearTimeout(this._mt[k]));
+  }
+
+  addEvent(e) {
+    this.setState(st => ({ events: [{ id: 'e' + st.nextId, ts: Date.now(), resolved: null, ...e }, ...st.events], nextId: st.nextId + 1 }));
+  }
+  patchSession(id, patch) {
+    this.setState(st => ({ sessions: st.sessions.map(s => s.id === id ? { ...s, ...patch } : s) }));
+  }
+  resolveEvent(id, how) {
+    this.setState(st => ({ events: st.events.map(e => e.id === id ? { ...e, resolved: how } : e) }));
+  }
+
+  showToast(label, undoFn) {
+    clearTimeout(this._toastT);
+    this._undoFn = undoFn;
+    this.setState({ toast: { label } });
+    this._toastT = setTimeout(() => this.setState({ toast: null }), 7000);
+  }
+  undoNow() {
+    const f = this._undoFn;
+    this._undoFn = null;
+    clearTimeout(this._toastT);
+    this.setState({ toast: null });
+    if (f) f();
+  }
+
+  approve(evId, scope) {
+    const ev = this.state.events.find(e => e.id === evId);
+    this.resolveEvent(evId, scope === 'session' ? 'allowed' : 'approved');
+    if (scope === 'session') this.setState(st => ({ grants: [...st.grants, { id: 'g' + st.nextId, sid: ev.sid, pattern: ev.grantPattern || 'command *', grantedAt: Date.now() }], nextId: st.nextId + 1 }));
+    this.patchSession(ev.sid, { status: 'running', statusLine: 'Running e2e suite', phase: 'executing' });
+    this.addEvent({ sid: ev.sid, kind: 'info', verb: scope === 'session' ? 'pattern allowed for this session — e2e run started' : 'started the e2e run (approved once by you)', own: true });
+    this._pending = setTimeout(() => {
+      this.addEvent({ sid: ev.sid, kind: 'info', verb: 'e2e suite passed — 48/48 · release candidate verified' });
+      this.patchSession(ev.sid, { status: 'running', statusLine: 'Writing QA summary', phase: 'reviewing', msDone: 4 });
+    }, 14000);
+  }
+  deny(evId) {
+    const ev = this.state.events.find(e => e.id === evId);
+    const s = this.state.sessions.find(x => x.id === ev.sid);
+    const prev = s ? { status: s.status, statusLine: s.statusLine, phase: s.phase } : null;
+    this.resolveEvent(evId, 'denied');
+    this.patchSession(ev.sid, { status: 'running', statusLine: 'Skipping e2e, wrapping up', phase: 'reviewing' });
+    this.addEvent({ sid: ev.sid, kind: 'info', verb: 'command denied — will summarize findings without e2e', own: true });
+    this.showToast('Denied ' + (s ? s.short : '') + '\u2019s command', () => {
+      this.resolveEvent(evId, null);
+      if (prev) this.patchSession(ev.sid, prev);
+      this.addEvent({ sid: ev.sid, kind: 'info', own: true, verb: 'denial undone — approval request reopened' });
+    });
+  }
+  retry(evId) {
+    const ev = this.state.events.find(e => e.id === evId);
+    this.resolveEvent(evId, 'retried');
+    this.patchSession(ev.sid, { status: 'running', statusLine: 'Retrying warehouse connection', phase: 'executing' });
+    this.addEvent({ sid: ev.sid, kind: 'info', verb: 'retrying warehouse connection…', own: true });
+    this._retryT = setTimeout(() => {
+      this.addEvent({ sid: ev.sid, kind: 'info', verb: 'connection restored — resuming backfill from checkpoint' });
+      this.patchSession(ev.sid, { statusLine: 'Backfilling from checkpoint', msDone: 3 });
+    }, 9000);
+  }
+  approveArtifact(evId) {
+    const ev = this.state.events.find(e => e.id === evId);
+    const s = this.state.sessions.find(x => x.id === ev.sid);
+    const prev = s ? { statusLine: s.statusLine, msDone: s.msDone, phase: s.phase } : null;
+    this.resolveEvent(evId, 'approved-art');
+    if (s) this.patchSession(s.id, { statusLine: 'Notes approved — finalizing', msDone: Math.min(s.msTotal, s.msDone + 1) });
+    this.addEvent({ sid: ev.sid, kind: 'info', own: true, verb: ev.artName + ' approved by you' });
+    this.setState({ reviewOpen: null, revComment: '' });
+    this._pubT = setTimeout(() => {
+      const cs = this.state.sessions.find(x => x.id === ev.sid);
+      if (cs) this.patchSession(cs.id, { status: 'done', statusLine: 'Done · notes published', phase: 'done', msDone: cs.msTotal });
+      this.addEvent({ sid: ev.sid, kind: 'info', verb: 'published ' + ev.artName + ' — task complete' });
+      const qaEv = this.state.events.find(e => e.id === 'e1');
+      const qaOk = qaEv && qaEv.resolved && qaEv.resolved !== 'denied';
+      this.addEvent({ sid: 'planner', kind: 'info', verb: qaOk ? 'all release gates green — preparing to ship v2.4' : 'notes published — release now waits only on QA sign-off' });
+      if (qaOk) this.patchSession('planner', { statusLine: 'Preparing to ship v2.4', msDone: 4 });
+    }, 6000);
+    this.showToast('Approved ' + ev.artName, () => {
+      clearTimeout(this._pubT);
+      this.resolveEvent(evId, null);
+      if (prev) this.patchSession(ev.sid, prev);
+      this.addEvent({ sid: ev.sid, kind: 'info', own: true, verb: 'artifact approval undone — review reopened' });
+    });
+  }
+  requestChanges(evId) {
+    const ev = this.state.events.find(e => e.id === evId);
+    const s = this.state.sessions.find(x => x.id === ev.sid);
+    const prev = s ? { statusLine: s.statusLine, phase: s.phase } : null;
+    const note = this.state.revComment.trim();
+    this.resolveEvent(evId, 'changes-req');
+    if (s) this.patchSession(s.id, { statusLine: 'Revising notes per your feedback', phase: 'executing' });
+    if (note && s) this.setState(st => ({ transcripts: { ...st.transcripts, [s.id]: [...(st.transcripts[s.id] || []), { k: 'user', text: note }] } }));
+    this.addEvent({ sid: ev.sid, kind: 'info', own: true, verb: 'changes requested on ' + ev.artName + (note ? ' — \u201C' + note + '\u201D' : '') });
+    this.setState({ reviewOpen: null, revComment: '' });
+    const vn = this.state.events.filter(e => e.sid === ev.sid && e.kind === 'review').length + 1;
+    this._revT = setTimeout(() => {
+      this.addEvent({
+        sid: ev.sid, kind: 'review', verb: 'requests your review — draft v' + vn,
+        artName: ev.artName, artExt: ev.artExt, artMeta: 'Draft v' + vn + ' · 1,310 words',
+        why: 'Revision addressing your feedback' + (note ? ': \u201C' + note + '\u201D' : '') + '. Changed lines are highlighted.',
+        body: 'Two sections rewritten; the rest is unchanged from the previous draft.',
+        chipsV: ['Draft v' + vn, '1,310 words'], chipsC: [],
+        artPreview: [
+          ['v2.4 — July 5, 2026 (draft v' + vn + ')', 'h'],
+          ['Features (12)', 's'],
+          ['▍ Exports API: three new endpoints for scheduled exports — now with rate-limit notes', 'c'],
+          ['• Bulk actions in the queue view', 'n'],
+          ['• SSO domain capture on signup', 'n'],
+          ['Fixes (28)', 's'],
+          ['▍ Checkout: coupon-removal fix rewritten in plainer language', 'c'],
+          ['• Retry-safe webhook delivery on transient 5xx', 'n'],
+          ['Internal (7)', 's'],
+          ['• CI migrated to split test shards (−41% wall time)', 'n'],
+          ['▍ = changed since previous draft', 'm']
+        ]
+      });
+      this.patchSession(ev.sid, { statusLine: 'Draft v' + vn + ' ready for review', phase: 'reviewing' });
+    }, 12000);
+    this.showToast('Requested changes on ' + ev.artName, () => {
+      clearTimeout(this._revT);
+      this.resolveEvent(evId, null);
+      if (prev) this.patchSession(ev.sid, prev);
+      this.addEvent({ sid: ev.sid, kind: 'info', own: true, verb: 'change request undone — review reopened' });
+    });
+  }
+  revokeGrant(id) {
+    const g = this.state.grants.find(x => x.id === id);
+    if (!g) return;
+    this.setState(st => ({ grants: st.grants.filter(x => x.id !== id) }));
+    this.addEvent({ sid: g.sid, kind: 'info', own: true, verb: 'permission revoked: ' + g.pattern });
+    this.showToast('Revoked ' + g.pattern, () => {
+      this.setState(st => ({ grants: [...st.grants, g] }));
+      this.addEvent({ sid: g.sid, kind: 'info', own: true, verb: 'revoke undone — ' + g.pattern + ' active again' });
+    });
+  }
+  altFix(evId) {
+    const ev = this.state.events.find(e => e.id === evId);
+    this.resolveEvent(evId, 'batched');
+    this.patchSession(ev.sid, { status: 'running', statusLine: 'Backfilling in 500-row batches', phase: 'executing' });
+    this.addEvent({ sid: ev.sid, kind: 'info', verb: 'switching to 500-row batches to fit the connection timeout', own: true });
+    this._batchT = setTimeout(() => {
+      this.addEvent({ sid: ev.sid, kind: 'info', verb: 'small-batch strategy working — 12k rows backfilled so far' });
+      this.patchSession(ev.sid, { msDone: 3 });
+    }, 9000);
+  }
+
+  // ---- restructuring ----
+  queueMove(id, target) {
+    const s = this.state.sessions.find(x => x.id === id);
+    if (!s || s.teamId === target) { this.setState({ moveConfirm: null }); return; }
+    const targetTeam = this.state.teams.find(tm => tm.id === target);
+    const label = targetTeam ? targetTeam.name : 'Independent';
+    this.patchSession(id, { pendingMove: { target: target, label: label } });
+    this.setState({ moveConfirm: null });
+    this._mt = this._mt || {};
+    if (this._mt[id]) clearTimeout(this._mt[id]);
+    this._mt[id] = setTimeout(() => this.executeMove(id), 8000);
+    this.addEvent({ sid: id, kind: 'info', own: true, verb: 'move queued: → ' + label + ' at the next step boundary' });
+    this.showToast('Move queued for ' + s.short + ' — hands off at next step', () => this.cancelMove(id));
+  }
+  cancelMove(id) {
+    if (this._mt && this._mt[id]) { clearTimeout(this._mt[id]); delete this._mt[id]; }
+    this.patchSession(id, { pendingMove: null });
+  }
+  executeMove(id) {
+    const st = this.state;
+    const s = st.sessions.find(x => x.id === id);
+    if (!s || !s.pendingMove) return;
+    const teamId = s.pendingMove.target;
+    if (this._mt && this._mt[id]) { clearTimeout(this._mt[id]); delete this._mt[id]; }
+    if (s.teamId === teamId) { this.patchSession(id, { pendingMove: null }); return; }
+    const fromTeam = st.teams.find(tm => tm.id === s.teamId);
+    const toTeam = st.teams.find(tm => tm.id === teamId);
+    let heirPrev = null;
+    let sessions = st.sessions.map(x => x.id === id ? { ...x, teamId: teamId, lead: false, dep: '', pendingMove: null, name: teamId ? 'Worker · ' + (x.baseName || x.short) : (x.baseName || x.name) } : x);
+    let teams = st.teams;
+    let extra = '';
+    if (fromTeam) {
+      const remaining = sessions.filter(x => x.teamId === fromTeam.id);
+      if (remaining.length === 0) {
+        teams = teams.filter(tm => tm.id !== fromTeam.id);
+        extra = ' — ' + fromTeam.name + ' disbanded (no members left)';
+      } else if (s.lead) {
+        const heir = remaining[0];
+        heirPrev = heir;
+        sessions = sessions.map(x => x.id === heir.id ? { ...x, lead: true, name: 'Lead · ' + (x.baseName || x.short) } : x);
+      }
+    }
+    this.setState({ sessions, teams });
+    this.addEvent({ sid: id, kind: 'info', verb: (toTeam ? 'handed off to ' + toTeam.name : 'detached from ' + (fromTeam ? fromTeam.name : 'team')) + ' at step boundary — context transferred' + extra });
+    if (heirPrev) this.addEvent({ sid: heirPrev.id, kind: 'info', verb: 'auto-promoted to lead of ' + fromTeam.name });
+  }
+  makeLead(id) {
+    const s = this.state.sessions.find(x => x.id === id);
+    if (!s || !s.teamId) return;
+    const team = this.state.teams.find(tm => tm.id === s.teamId);
+    const prev = this.state.sessions.filter(x => x.teamId === s.teamId).map(x => ({ id: x.id, lead: x.lead, name: x.name }));
+    this.setState(st => ({
+      sessions: st.sessions.map(x => x.teamId === s.teamId ? { ...x, lead: x.id === id, name: (x.id === id ? 'Lead · ' : 'Worker · ') + (x.baseName || x.short) } : x),
+      expandedMemberId: null, moveConfirm: null
+    }));
+    this.addEvent({ sid: id, kind: 'info', own: true, verb: 'promoted to lead of ' + (team ? team.name : 'team') + ' — takes over coordination at the next step' });
+    this.showToast('Promoted ' + s.short + ' to lead', () => {
+      this.setState(st => ({ sessions: st.sessions.map(x => { const p = prev.find(pp => pp.id === x.id); return p ? { ...x, lead: p.lead, name: p.name } : x; }) }));
+      this.addEvent({ sid: id, kind: 'info', own: true, verb: 'promotion undone' });
+    });
+  }
+
+  queueChange(id, kind, val) {
+    const s = this.state.sessions.find(x => x.id === id);
+    if (!s || s.status === 'done' || s.status === 'stopped') return;
+    const cur = kind === 'model' ? s.model : s.effort;
+    const pk = kind === 'model' ? 'pendingModel' : 'pendingEffort';
+    if (s[pk] === val) { this.cancelPending(id, kind); return; }
+    if (cur === val) { if (s[pk]) this.cancelPending(id, kind); return; }
+    this.patchSession(id, { [pk]: val });
+    this._pt = this._pt || {};
+    const key = id + kind;
+    if (this._pt[key]) clearTimeout(this._pt[key]);
+    this._pt[key] = setTimeout(() => this.applyPending(id, kind), 8000);
+    const desc = kind === 'model' ? 'model change queued: ' + this.capModel(cur) + ' → ' + this.capModel(val) : 'effort change queued: ' + cur + ' → ' + val;
+    this.addEvent({ sid: id, kind: 'info', own: true, verb: desc + ' (applies at next step)' });
+    this.showToast('Queued for ' + s.short + ': ' + (kind === 'model' ? this.capModel(val) : val + ' effort') + ' at next step', () => this.cancelPending(id, kind));
+  }
+  applyPending(id, kind) {
+    const s = this.state.sessions.find(x => x.id === id);
+    const pk = kind === 'model' ? 'pendingModel' : 'pendingEffort';
+    if (!s || !s[pk]) return;
+    const pend = s[pk];
+    this.patchSession(id, kind === 'model' ? { model: pend, pendingModel: null } : { effort: pend, pendingEffort: null });
+    this.addEvent({ sid: id, kind: 'info', verb: (kind === 'model' ? 'switched to ' + this.capModel(pend) : 'effort now ' + pend) + ' at step boundary' });
+  }
+  cancelPending(id, kind) {
+    const pk = kind === 'model' ? 'pendingModel' : 'pendingEffort';
+    const key = id + kind;
+    if (this._pt && this._pt[key]) { clearTimeout(this._pt[key]); delete this._pt[key]; }
+    this.patchSession(id, { [pk]: null });
+  }
+  costPhrase(from, to) {
+    const r = { haiku: 1, sonnet: 3, opus: 15 };
+    const k = r[to] / r[from];
+    if (k > 1) return ' · ≈' + (k % 1 ? k.toFixed(1) : k) + '× step cost';
+    return ' · ≈' + Math.round((1 - k) * 100) + '% cheaper per step';
+  }
+  effortRank(e) { return { low: 0, medium: 1, high: 2 }[e]; }
+  pendingNotesFor(s) {
+    const notes = [];
+    if (s.pendingModel) notes.push({ text: this.capModel(s.model) + ' → ' + this.capModel(s.pendingModel) + ' at next step' + this.costPhrase(s.model, s.pendingModel), cancel: () => this.cancelPending(s.id, 'model') });
+    if (s.pendingEffort) notes.push({ text: 'effort ' + s.effort + ' → ' + s.pendingEffort + ' at next step · ' + (this.effortRank(s.pendingEffort) > this.effortRank(s.effort) ? 'more' : 'less') + ' thinking budget', cancel: () => this.cancelPending(s.id, 'effort') });
+    if (s.pendingMove) notes.push({ text: 'moving to ' + s.pendingMove.label + ' at next step — context handoff', cancel: () => this.cancelMove(s.id) });
+    return notes;
+  }
+  chipP(state) {
+    const base = 'font-size:10.5px;font-weight:600;padding:3px 10px;border-radius:9px;cursor:pointer;';
+    if (state === 'current') return base + 'background:#1c1b18;color:#fff;border:1px solid #1c1b18';
+    if (state === 'pending') return base + 'background:#fdf3e2;color:#c07018;border:1px solid #d98324';
+    return base + 'background:#fff;color:#6d6a63;border:1px solid #e0ddd6';
+  }
+
+  capModel(m) { return { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' }[m] || m; }
+  capEffort(e) { return { low: 'Low', medium: 'Med', high: 'High' }[e] || e; }
+
+  fmtTime(ts) {
+    const m = Math.floor((this.state.now - ts) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm';
+    return Math.floor(m / 60) + 'h';
+  }
+  fmtElapsed(ts) {
+    const m = Math.floor((this.state.now - ts) / 60000);
+    if (m < 60) return m + 'm';
+    return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+  }
+
+  statusColor(status) {
+    return { running: '#3f9d63', waiting: '#d98324', error: '#c4432b', paused: '#8a867d', stopped: '#b0776b', done: '#b6b2a8' }[status] || '#b6b2a8';
+  }
+  dotStyle(status, size) {
+    const s = size || 8;
+    return `width:${s}px;height:${s}px;border-radius:50%;background:${this.statusColor(status)};flex:none;display:inline-block`;
+  }
+  phaseLabel(s) {
+    return { planning: 'planning', executing: 'executing', reviewing: 'reviewing', gated: 'gated on you', blocked: 'blocked', stopped: 'stopped by you', done: 'done' }[s.phase] || s.phase;
+  }
+  segs(s) {
+    const color = this.statusColor(s.status);
+    const arr = [];
+    for (let i = 0; i < s.msTotal; i++) arr.push({ style: `flex:1;height:4px;border-radius:2px;background:${i < s.msDone ? color : '#f1efeb'}` });
+    return arr;
+  }
+  chip(sel) {
+    return `font-size:10.5px;font-weight:600;padding:3px 10px;border-radius:9px;cursor:pointer;${sel ? 'background:#1c1b18;color:#fff;border:1px solid #1c1b18' : 'background:#fff;color:#6d6a63;border:1px solid #e0ddd6'}`;
+  }
+  modelChipsFor(s) {
+    return ['haiku', 'sonnet', 'opus'].map(m => ({
+      label: this.capModel(m),
+      onClick: () => this.queueChange(s.id, 'model', m),
+      style: this.chipP(s.pendingModel === m ? 'pending' : (s.model === m ? 'current' : 'idle'))
+    }));
+  }
+  effortChipsFor(s) {
+    return ['low', 'medium', 'high'].map(e => ({
+      label: this.capEffort(e),
+      onClick: () => this.queueChange(s.id, 'effort', e),
+      style: this.chipP(s.pendingEffort === e ? 'pending' : (s.effort === e ? 'current' : 'idle'))
+    }));
+  }
+
+  sessionDisplay(s) {
+    const sel = this.state.selectedId === s.id;
+    const subColor = s.status === 'waiting' ? '#c07018' : s.status === 'error' ? '#b03a24' : s.status === 'stopped' ? '#9a5243' : '#8a867d';
+    return {
+      ...s,
+      select: () => this.setState({ selectedId: s.id, chatText: '', confirmStop: false }),
+      rowStyle: `display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;background:${sel ? '#f4f2ee' : 'transparent'}`,
+      dotStyle: this.dotStyle(s.status),
+      nameStyle: `font-size:12.5px;font-weight:${s.lead || sel ? 600 : 500};color:${s.status === 'done' || s.status === 'stopped' ? '#8a867d' : '#1c1b18'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`,
+      subStyle: `font-size:11px;color:${subColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`
+    };
+  }
+  statusWord(st) { return { running: 'running', waiting: 'needs you', error: 'blocked', paused: 'paused', stopped: 'stopped', done: 'done' }[st]; }
+  pillStyle(st) {
+    const m = { running: ['#eef7f1', '#2e7c4d'], waiting: ['#fdf3e2', '#c07018'], error: ['#fdf0ec', '#b03a24'], paused: ['#f1efeb', '#6d6a63'], stopped: ['#f7ece9', '#9a5243'], done: ['#f1efeb', '#8a867d'] }[st];
+    return `font-size:10.5px;font-weight:600;color:${m[1]};background:${m[0]};padding:2px 9px;border-radius:10px;flex:none`;
+  }
+
+  memberDisplay(s, branch) {
+    const st = this.state;
+    const expanded = st.expandedMemberId === s.id;
+    const others = st.teams.filter(tm => tm.id !== s.teamId);
+    const moveBtns = others.map(tm => ({ label: '→ ' + tm.name, onClick: () => this.setState({ moveConfirm: { sid: s.id, target: tm.id } }) }));
+    if (s.teamId) moveBtns.push({ label: '→ Independent', onClick: () => this.setState({ moveConfirm: { sid: s.id, target: null } }) });
+    const mc = st.moveConfirm;
+    const mcActive = expanded && !!mc && mc.sid === s.id;
+    let moveLines = [], moveTargetLabel = '';
+    if (mcActive) {
+      const targetTeam = st.teams.find(tm => tm.id === mc.target);
+      moveTargetLabel = targetTeam ? targetTeam.name : 'Independent';
+      const curTeam = st.teams.find(tm => tm.id === s.teamId);
+      const normal = 'font-size:11.5px;color:#4a4741;line-height:1.5';
+      const warn = 'font-size:11.5px;color:#b03a24;font-weight:600;line-height:1.5';
+      if (targetTeam) {
+        const lead = st.sessions.find(x => x.teamId === targetTeam.id && x.lead);
+        moveLines.push({ text: 'Finishes its current step, then hands context to ' + (lead ? lead.short : 'the team') + '.', style: normal });
+      } else {
+        moveLines.push({ text: 'Finishes its current step, then continues the task solo.', style: normal });
+      }
+      if (s.dep && curTeam) moveLines.push({ text: '⚠ ' + s.short + ' ' + s.dep + ' — ' + curTeam.name + ' loses this gate.', style: warn });
+      if (s.lead) {
+        const heir = st.sessions.find(x => x.teamId === s.teamId && x.id !== s.id);
+        if (heir) moveLines.push({ text: 'Lead role passes to ' + heir.short + '.', style: normal });
+      }
+    }
+    const notes = this.pendingNotesFor(s);
+    return {
+      ...this.sessionDisplay(s),
+      branch: branch || '',
+      role: s.teamId ? (s.lead ? 'lead' : 'worker') : '',
+      dep: s.dep || false,
+      modelTag: this.capModel(s.model) + '·' + s.effort + (s.pendingModel || s.pendingEffort || s.pendingMove ? ' ⏳' : ''),
+      rowStyle: `display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;background:${st.selectedId === s.id ? '#f4f2ee' : 'transparent'}`,
+      gearStyle: `font-size:15px;font-weight:700;color:${expanded ? '#1c1b18' : '#9a968d'};cursor:pointer;padding:0 5px;line-height:1`,
+      toggleManage: (e) => { e.stopPropagation(); this.setState(st2 => ({ expandedMemberId: st2.expandedMemberId === s.id ? null : s.id, moveConfirm: null })); },
+      expanded,
+      modelChips: this.modelChipsFor(s),
+      effortChips: this.effortChipsFor(s),
+      hasPendingNote: notes.length > 0,
+      pendingNotes: notes,
+      moveBtns,
+      moveConfirmActive: mcActive,
+      moveConfirmInactive: !mcActive,
+      moveTargetLabel,
+      moveLines,
+      confirmMove: () => { if (mc) this.queueMove(s.id, mc.target); },
+      cancelMove: () => this.setState({ moveConfirm: null }),
+      canLead: !!s.teamId && !s.lead,
+      makeLead: () => this.makeLead(s.id)
+    };
+  }
+
+  pinnedDisplay(ev) {
+    const s = this.state.sessions.find(x => x.id === ev.sid) || { name: ev.sid };
+    const isApproval = ev.kind === 'approval';
+    const isReview = ev.kind === 'review';
+    const edge = isApproval ? '#d98324' : isReview ? '#2a6fdb' : '#c4432b';
+    const border = isApproval ? '#ecd9b8' : isReview ? '#dbe5f5' : '#ecc7bd';
+    return {
+      id: ev.id,
+      name: s.name,
+      verb: ev.verb,
+      time: this.fmtTime(ev.ts),
+      dotStyle: `width:8px;height:8px;border-radius:50%;background:${edge};flex:none;display:inline-block`,
+      cardStyle: `background:#fff;border:1px solid ${border};border-left:3px solid ${edge};border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.05);animation:sbin .25s ease`,
+      why: ev.why,
+      hasCommand: !!ev.command, command: ev.command,
+      hasBody: !!ev.body, body: ev.body,
+      chipsV: ev.chipsV || [], chipsC: ev.chipsC || (ev.chips || []),
+      isApproval,
+      isError: ev.kind === 'error',
+      isReview,
+      approve: () => this.approve(ev.id, 'once'),
+      allowSession: () => this.approve(ev.id, 'session'),
+      deny: () => this.deny(ev.id),
+      retry: () => this.retry(ev.id),
+      altFix: () => this.altFix(ev.id),
+      openReview: () => this.setState({ reviewOpen: ev.id, revComment: '' }),
+      approveArt: () => this.approveArtifact(ev.id),
+      open: () => this.setState({ selectedId: ev.sid, confirmStop: false })
+    };
+  }
+
+  eventDisplay(ev) {
+    const s = this.state.sessions.find(x => x.id === ev.sid) || { name: ev.sid, status: 'running' };
+    const unread = ev.ts > this.state.lastSeen && !ev.own;
+    const base = { id: ev.id, name: s.name, time: this.fmtTime(ev.ts), dotStyle: this.dotStyle(ev.resolved ? 'running' : { approval: 'waiting', error: 'error' }[ev.kind] || 'running') };
+    if (ev.kind === 'info' || (ev.resolved && ev.kind !== 'review')) {
+      let verb = ev.verb;
+      if (ev.resolved === 'approved') verb = 'command approved once by you — e2e run started';
+      if (ev.resolved === 'allowed') verb = 'pattern allowed for this session — e2e run started';
+      if (ev.resolved === 'denied') verb = 'command denied by you';
+      if (ev.resolved === 'retried') verb = 'retry requested by you';
+      if (ev.resolved === 'batched') verb = 'switched to smaller batches at your direction';
+      return { ...base, compact: true, isCard: false, isDivider: false, verb,
+        filterSession: () => this.setState({ sessionFilter: ev.sid }),
+        rowStyle: `display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:8px;animation:sbin .25s ease;${unread ? 'border-left:2px solid #d98324;background:#fffcf5' : 'border-left:2px solid transparent'}` };
+    }
+    return {
+      ...base,
+      compact: false, isCard: true, isDivider: false,
+      verb: ev.kind === 'review' && ev.resolved ? (ev.resolved === 'approved-art' ? 'artifact approved by you' : 'revising after your feedback') : ev.verb,
+      cardStyle: `background:${unread ? '#fffdf8' : '#fff'};border:1px solid #e7e4de;${unread ? 'border-left:2px solid #d98324;' : ''}border-radius:12px;padding:14px 16px;box-shadow:0 1px 2px rgba(0,0,0,.04);animation:sbin .25s ease`,
+      hasBody: !!ev.body && ev.kind !== 'review', body: ev.body,
+      hasArtifact: ev.kind === 'artifact' || ev.kind === 'review', artName: ev.artName, artExt: ev.artExt, artMeta: ev.artMeta,
+      openArt: () => this.setState({ reviewOpen: ev.id, revComment: '' }),
+      filterSession: () => this.setState({ sessionFilter: ev.sid })
+    };
+  }
+
+  renderVals() {
+    const st = this.state;
+    const showCosts = this.props.showCosts ?? true;
+    const tabs = ['feed', 'sessions', 'teams'].map(t => ({
+      label: t[0].toUpperCase() + t.slice(1),
+      onClick: () => this.setState({ tab: t }),
+      style: st.tab === t
+        ? 'padding:5px 12px;font-size:12.5px;font-weight:600;background:#fff;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.06);cursor:pointer'
+        : 'padding:5px 12px;font-size:12.5px;color:#6d6a63;border-radius:6px;cursor:pointer'
+    }));
+
+    const needsKind = (e) => e.kind === 'approval' || e.kind === 'error' || e.kind === 'review';
+    const unresolved = st.events.filter(e => needsKind(e) && !e.resolved);
+    const running = st.sessions.filter(s => s.status === 'running').length;
+    const unresolvedSorted = unresolved.slice().sort((a, b) => a.ts - b.ts);
+    const pinCap = 2;
+    const showAllP = st.pinnedShowAll || unresolvedSorted.length <= pinCap;
+    const pinned = (showAllP ? unresolvedSorted : unresolvedSorted.slice(0, pinCap)).map(e => this.pinnedDisplay(e));
+
+    let stream = st.events.filter(e => !(needsKind(e) && !e.resolved));
+    const unreadCount = stream.filter(e => e.ts > st.lastSeen && !e.own).length;
+    if (st.filter === 'unread') stream = stream.filter(e => e.ts > st.lastSeen && !e.own);
+    if (st.filter === 'artifacts') stream = stream.filter(e => e.kind === 'artifact' || e.kind === 'review');
+    if (st.filter === 'errors') stream = stream.filter(e => e.kind === 'error');
+    if (st.sessionFilter) stream = stream.filter(e => e.sid === st.sessionFilter);
+    const q = st.search.trim().toLowerCase();
+    if (q) stream = stream.filter(e => {
+      const es = st.sessions.find(x => x.id === e.sid);
+      return (e.verb || '').toLowerCase().includes(q) || (e.artName || '').toLowerCase().includes(q) || (es && (es.name.toLowerCase().includes(q) || es.short.toLowerCase().includes(q)));
+    });
+    const sfSession = st.sessionFilter ? st.sessions.find(x => x.id === st.sessionFilter) : null;
+
+    const feedEvents = [];
+    let dividerPlaced = st.filter !== 'all' || !!q || !!st.sessionFilter;
+    stream.slice(0, 40).forEach(e => {
+      const unread = e.ts > st.lastSeen && !e.own;
+      if (!dividerPlaced && !unread) {
+        if (feedEvents.length > 0) feedEvents.push({ isDivider: true, compact: false, isCard: false });
+        dividerPlaced = true;
+      }
+      feedEvents.push(this.eventDisplay(e));
+    });
+
+    const filterDefs = [
+      { key: 'all', label: 'All' },
+      { key: 'unread', label: 'Unread' + (unreadCount ? ' · ' + unreadCount : '') },
+      { key: 'artifacts', label: 'Artifacts' },
+      { key: 'errors', label: 'Errors' }
+    ];
+    const filters = filterDefs.map(f => ({
+      label: f.label,
+      onClick: () => this.setState({ filter: f.key }),
+      style: st.filter === f.key
+        ? 'padding:4px 10px;font-size:11.5px;font-weight:600;background:#1c1b18;color:#fff;border-radius:20px;cursor:pointer'
+        : 'padding:4px 10px;font-size:11.5px;color:#6d6a63;border:1px solid #e0ddd6;border-radius:20px;cursor:pointer'
+    }));
+
+    const unreadInfo = st.events.filter(e => e.ts > st.lastSeen && !e.own && !(needsKind(e) && !e.resolved));
+    const seen = {};
+    const digestLines = [];
+    unreadInfo.forEach(e => {
+      if (seen[e.sid] || digestLines.length >= 4) return;
+      seen[e.sid] = true;
+      const s = st.sessions.find(x => x.id === e.sid);
+      digestLines.push({ name: s ? (s.short || s.name) : e.sid, text: e.verb, jump: () => this.setState({ sessionFilter: e.sid }) });
+    });
+    const awayMin = Math.max(1, Math.floor((st.now - st.lastSeen) / 60000));
+
+    // left rail groups
+    const railGroups = [];
+    st.teams.forEach((tm, i) => {
+      railGroups.push({
+        title: tm.name.toUpperCase(),
+        headStyle: `font-size:10.5px;font-weight:600;letter-spacing:.08em;color:#9a968d;padding:${i === 0 ? '0' : '14px'} 10px 8px`,
+        sessions: st.sessions.filter(s => s.teamId === tm.id).sort((a, b) => (b.lead ? 1 : 0) - (a.lead ? 1 : 0)).map(s => this.sessionDisplay(s))
+      });
+    });
+    railGroups.push({
+      title: 'INDEPENDENT',
+      headStyle: `font-size:10.5px;font-weight:600;letter-spacing:.08em;color:#9a968d;padding:${st.teams.length ? '14px' : '0'} 10px 8px`,
+      sessions: st.sessions.filter(s => !s.teamId).map(s => this.sessionDisplay(s))
+    });
+
+    const allSessions = st.sessions.map(s => ({
+      ...this.sessionDisplay(s),
+      statusWord: this.statusWord(s.status),
+      pillStyle: this.pillStyle(s.status),
+      segs: this.segs(s),
+      meta: this.capModel(s.model) + '·' + s.effort + ' · ' + this.phaseLabel(s) + ' · ' + s.msDone + '/' + s.msTotal + (s.status === 'done' ? '' : ' · ' + this.fmtElapsed(s.startedAt)),
+      cost: showCosts ? '$' + s.cost.toFixed(2) : ''
+    }));
+
+    // teams tab
+    const teamCards = st.teams.map(tm => {
+      const members = st.sessions.filter(s => s.teamId === tm.id).sort((a, b) => (b.lead ? 1 : 0) - (a.lead ? 1 : 0));
+      const workers = members.filter(m => !m.lead);
+      return {
+        name: tm.name,
+        meta: members.length + (members.length === 1 ? ' agent' : ' agents') + ' · started ' + this.fmtElapsed(tm.startedAt) + ' ago',
+        goal: tm.goal,
+        addMember: () => this.setState({ modalOpen: true, modalMode: 'existing', targetTeamId: tm.id, promptText: '', memberModel: 'sonnet', memberEffort: 'medium' }),
+        members: members.map(m => this.memberDisplay(m, m.lead ? '' : (workers.indexOf(m) === workers.length - 1 ? '└' : '├')))
+      };
+    });
+    const indepList = st.sessions.filter(s => !s.teamId);
+    const indepTree = indepList.map(s => this.memberDisplay(s, ''));
+
+    // drawer
+    const sel = st.sessions.find(s => s.id === st.selectedId);
+    let drawerVals = {};
+    if (sel) {
+      const selTeam = st.teams.find(tm => tm.id === sel.teamId);
+      const selLead = sel.teamId ? st.sessions.find(x => x.teamId === sel.teamId && x.lead) : null;
+      const transcript = (st.transcripts[sel.id] || []).map(m => {
+        if (m.k === 'perm') {
+          const pe = st.events.find(e => e.id === m.eventId);
+          return {
+            isPermission: true, command: pe ? pe.command : '',
+            unresolved: pe && !pe.resolved,
+            resolvedLabel: pe && pe.resolved ? (pe.resolved === 'approved' ? '✓ Approved once — running' : pe.resolved === 'allowed' ? '✓ Pattern allowed for session — running' : pe.resolved === 'denied' ? 'Denied' : 'Resolved') : false,
+            approve: () => this.approve(m.eventId, 'once'),
+            deny: () => this.deny(m.eventId)
+          };
+        }
+        return { isNote: m.k === 'note', isText: m.k === 'text', isTool: m.k === 'tool', isUser: m.k === 'user', text: m.text };
+      });
+      drawerVals = {
+        drawerOpen: true,
+        selName: sel.name,
+        selDotStyle: this.dotStyle(sel.status, 9),
+        selPillStyle: this.pillStyle(sel.status),
+        selStatusWord: this.statusWord(sel.status),
+        selGroupLine: selTeam ? (sel.lead ? selTeam.name + ' · lead' : selTeam.name + ' · reports to ' + (selLead ? selLead.short : 'lead')) : 'Independent session',
+        selModelLine: this.capModel(sel.model) + (sel.status === 'done' ? ' · finished' : ' · ' + sel.ctx + '% context'),
+        selCost: showCosts ? '$' + sel.cost.toFixed(2) : '',
+        selSegs: this.segs(sel),
+        selPhaseLine: this.phaseLabel(sel) + ' · ' + sel.msDone + '/' + sel.msTotal + (sel.status === 'done' ? '' : ' · ' + this.fmtElapsed(sel.startedAt)),
+        selModelChips: this.modelChipsFor(sel),
+        selEffortChips: this.effortChipsFor(sel),
+        selPendingNotes: this.pendingNotesFor(sel),
+        selHasPending: this.pendingNotesFor(sel).length > 0,
+        selDep: sel.dep || false,
+        pauseLabel: sel.status === 'paused' ? 'Resume' : 'Pause',
+        selTranscript: transcript,
+        chatPlaceholder: 'Message ' + (sel.short || sel.name) + '…',
+        confirmStop: st.confirmStop,
+        notConfirmStop: !st.confirmStop,
+        selHasGrants: st.grants.some(g => g.sid === sel.id),
+        selGrantLine: 'Grants · ' + st.grants.filter(g => g.sid === sel.id).length,
+        openGrantsPanel: () => this.setState({ grantsOpen: true })
+      };
+    }
+
+    // artifact review panel
+    const rev = st.reviewOpen ? st.events.find(e => e.id === st.reviewOpen) : null;
+    let reviewVals = { reviewPanelOpen: false };
+    if (rev) {
+      const owner = st.sessions.find(x => x.id === rev.sid);
+      const styleMap = {
+        h: 'font-size:15px;font-weight:700;color:#1c1b18;padding-bottom:2px',
+        s: 'font-size:12.5px;font-weight:700;color:#1c1b18;padding-top:8px',
+        n: 'font-size:12.5px;color:#4a4741;line-height:1.55',
+        c: 'font-size:12.5px;color:#1c1b18;line-height:1.55;background:#fdf9f1;border-left:2px solid #d98324;padding:2px 8px;border-radius:0 4px 4px 0',
+        m: 'font-size:12px;color:#9a968d;font-style:italic'
+      };
+      reviewVals = {
+        reviewPanelOpen: true,
+        revTitle: rev.artName,
+        revExt: rev.artExt,
+        revMeta: (owner ? owner.short + ' · ' : '') + (rev.artMeta || ''),
+        revLines: (rev.artPreview || [['(no preview available)', 'm']]).map(l => ({ text: l[0], style: styleMap[l[1]] || styleMap.n })),
+        revUnresolved: rev.kind === 'review' && !rev.resolved,
+        revResolvedLabel: rev.kind === 'review' && rev.resolved
+          ? (rev.resolved === 'approved-art' ? '✓ Approved by you' : 'Changes requested — the agent is revising')
+          : (rev.kind === 'artifact' ? 'Delivered — no review needed' : false),
+        revComment: st.revComment,
+        onRevComment: (e) => this.setState({ revComment: e.target.value }),
+        approveArtifact: () => this.approveArtifact(rev.id),
+        requestChanges: () => this.requestChanges(rev.id),
+        closeReview: () => this.setState({ reviewOpen: null, revComment: '' })
+      };
+    }
+
+    const grantRows = st.grants.map(g => {
+      const gs = st.sessions.find(x => x.id === g.sid);
+      return { pattern: g.pattern, sub: (gs ? gs.short : g.sid) + ' · granted ' + this.fmtTime(g.grantedAt) + ' ago', revoke: () => this.revokeGrant(g.id) };
+    });
+
+    // modal
+    const modeDefs = [{ key: 'solo', label: 'Independent' }];
+    if (st.teams.length) modeDefs.push({ key: 'existing', label: 'Existing team' });
+    modeDefs.push({ key: 'new', label: 'New team' });
+    const modalModes = modeDefs.map(m => ({
+      label: m.label,
+      onClick: () => this.setState({ modalMode: m.key, targetTeamId: st.targetTeamId || (st.teams[0] ? st.teams[0].id : null) }),
+      style: st.modalMode === m.key
+        ? 'padding:7px 14px;font-size:12px;font-weight:600;background:#1c1b18;color:#fff;border-radius:8px;cursor:pointer'
+        : 'padding:7px 14px;font-size:12px;font-weight:600;color:#6d6a63;border:1px solid #e0ddd6;border-radius:8px;cursor:pointer'
+    }));
+    const teamPickChips = st.teams.map(tm => ({
+      label: tm.name,
+      onClick: () => this.setState({ targetTeamId: tm.id }),
+      style: this.chip(st.targetTeamId === tm.id) + ';font-size:11.5px;padding:5px 12px'
+    }));
+    const pickModelChips = ['haiku', 'sonnet', 'opus'].map(m => ({ label: this.capModel(m), onClick: () => this.setState({ memberModel: m }), style: this.chip(st.memberModel === m) }));
+    const pickEffortChips = ['low', 'medium', 'high'].map(e => ({ label: this.capEffort(e), onClick: () => this.setState({ memberEffort: e }), style: this.chip(st.memberEffort === e) }));
+    const draftRows = st.draftMembers.map((dm, i) => ({
+      role: i === 0 ? 'LEAD' : 'WORKER',
+      roleStyle: `font-size:9px;font-weight:700;letter-spacing:.07em;color:${i === 0 ? '#fff' : '#6d6a63'};background:${i === 0 ? '#1c1b18' : '#f1efeb'};padding:3px 8px;border-radius:6px;flex:none`,
+      ph: i === 0 ? 'e.g. Plan and coordinate the work' : 'e.g. Research competitor pricing',
+      task: dm.task,
+      onTask: (e) => this.setDraft(i, { task: e.target.value }),
+      canRemove: st.draftMembers.length > 1,
+      remove: () => this.setState(s2 => ({ draftMembers: s2.draftMembers.filter((_, j) => j !== i) })),
+      modelChips: ['haiku', 'sonnet', 'opus'].map(m => ({ label: this.capModel(m), onClick: () => this.setDraft(i, { model: m }), style: this.chip(dm.model === m) })),
+      effortChips: ['low', 'medium', 'high'].map(e => ({ label: this.capEffort(e), onClick: () => this.setDraft(i, { effort: e }), style: this.chip(dm.effort === e) }))
+    }));
+
+    return {
+      tabs,
+      statusSummary: running + ' running' + (unresolved.length ? ' · ' + unresolved.length + ' need you' : ''),
+      showFeed: st.tab === 'feed',
+      showSessions: st.tab === 'sessions',
+      showTeams: st.tab === 'teams',
+      pinned,
+      hasPinned: unresolvedSorted.length > 0,
+      needsCount: unresolvedSorted.length,
+      pinnedHasMore: unresolvedSorted.length > pinCap,
+      pinnedMoreLabel: st.pinnedShowAll ? 'Collapse — show first ' + pinCap : '+' + (unresolvedSorted.length - pinCap) + ' more waiting — show all',
+      togglePinnedAll: () => this.setState(s2 => ({ pinnedShowAll: !s2.pinnedShowAll })),
+      needsBadgeStyle: 'display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;background:#d98324;color:#fff;border-radius:9px;font-size:10.5px;font-weight:700;padding:0 5px',
+      filters,
+      feedEvents,
+      feedEmpty: feedEvents.length === 0,
+      hasUnread: unreadCount > 0,
+      unreadCount,
+      markCaughtUp: () => this.setState({ lastSeen: Date.now(), digestDismissed: true, filter: st.filter === 'unread' ? 'all' : st.filter }),
+      showDigest: !st.digestDismissed && digestLines.length >= 3 && st.filter === 'all',
+      digestLines,
+      digestMeta: awayMin + 'm away · ' + unreadInfo.length + ' events',
+      dismissDigest: () => this.setState({ digestDismissed: true }),
+      railGroups,
+      allSessions,
+      teamCards,
+      indepTree,
+      noIndep: indepList.length === 0,
+      openTeamModal: () => this.setState({ modalOpen: true, modalMode: 'new', teamName: '', promptText: '', draftMembers: this.freshDraft() }),
+      drawerOpen: false,
+      confirmStop: false,
+      notConfirmStop: true,
+      ...drawerVals,
+      closeDrawer: () => this.setState({ selectedId: null, confirmStop: false }),
+      stopProp: (e) => e.stopPropagation(),
+      togglePause: () => {
+        if (!sel || sel.status === 'done' || sel.status === 'stopped') return;
+        const paused = sel.status === 'paused';
+        this.patchSession(sel.id, { status: paused ? 'running' : 'paused', statusLine: paused ? 'Resuming…' : 'Paused by you' });
+        this.addEvent({ sid: sel.id, kind: 'info', verb: paused ? 'resumed by you' : 'paused by you', own: true });
+      },
+      askStop: () => this.setState({ confirmStop: true }),
+      cancelStop: () => this.setState({ confirmStop: false }),
+      stopSession: () => {
+        if (!sel) return;
+        const prev = { status: sel.status, statusLine: sel.statusLine, phase: sel.phase };
+        this.patchSession(sel.id, { status: 'stopped', statusLine: 'Stopped by you', phase: 'stopped' });
+        this.addEvent({ sid: sel.id, kind: 'info', verb: 'stopped by you', own: true });
+        this.setState({ selectedId: null, confirmStop: false });
+        this.showToast('Stopped ' + sel.short, () => {
+          this.patchSession(sel.id, prev);
+          this.addEvent({ sid: sel.id, kind: 'info', own: true, verb: 'stop undone — session resumed' });
+        });
+      },
+      chatText: st.chatText,
+      onChat: (e) => this.setState({ chatText: e.target.value }),
+      chatKey: (e) => { if (e.key === 'Enter') this.sendChat(); },
+      sendChat: () => this.sendChat(),
+      modalOpen: st.modalOpen,
+      modalTitle: st.modalMode === 'new' ? 'New team' : st.modalMode === 'existing' ? 'Add agent to a team' : 'New session',
+      modalModes,
+      modalIsNewTeam: st.modalMode === 'new',
+      modalIsSimple: st.modalMode !== 'new',
+      modalIsExisting: st.modalMode === 'existing',
+      teamPickChips,
+      pickModelChips,
+      pickEffortChips,
+      draftRows,
+      addDraftMember: () => this.setState(s2 => ({ draftMembers: [...s2.draftMembers, { task: '', model: 'sonnet', effort: 'medium' }] })),
+      teamName: st.teamName,
+      onTeamName: (e) => this.setState({ teamName: e.target.value }),
+      openModal: () => this.setState({ modalOpen: true, modalMode: 'solo', promptText: '', memberModel: 'sonnet', memberEffort: 'medium', targetTeamId: st.teams[0] ? st.teams[0].id : null }),
+      closeModal: () => this.setState({ modalOpen: false }),
+      promptText: st.promptText,
+      onPrompt: (e) => this.setState({ promptText: e.target.value }),
+      spawnLabel: st.modalMode === 'new' ? 'Start team' : st.modalMode === 'existing' ? 'Add to team' : 'Start session',
+      spawn: () => this.spawn(),
+      toastVisible: !!st.toast,
+      toastLabel: st.toast ? st.toast.label : '',
+      toastUndo: () => this.undoNow(),
+      toastDismiss: () => { this._undoFn = null; clearTimeout(this._toastT); this.setState({ toast: null }); },
+      ...reviewVals,
+      hasGrants: st.grants.length > 0,
+      grantCount: st.grants.length,
+      grantsOpen: st.grantsOpen,
+      noGrants: st.grants.length === 0,
+      grantRows,
+      toggleGrants: () => this.setState(s2 => ({ grantsOpen: !s2.grantsOpen })),
+      closeGrants: () => this.setState({ grantsOpen: false }),
+      searchText: st.search,
+      onSearch: (e) => this.setState({ search: e.target.value }),
+      hasSessionFilter: !!st.sessionFilter,
+      sessionFilterLabel: sfSession ? sfSession.short : '',
+      clearSessionFilter: () => this.setState({ sessionFilter: null })
+    };
+  }
+
+  setDraft(i, patch) {
+    this.setState(st => ({ draftMembers: st.draftMembers.map((d, j) => j === i ? { ...d, ...patch } : d) }));
+  }
+
+  sendChat() {
+    const txt = this.state.chatText.trim();
+    const sel = this.state.sessions.find(s => s.id === this.state.selectedId);
+    if (!txt || !sel) return;
+    this.setState(st => ({
+      transcripts: { ...st.transcripts, [sel.id]: [...(st.transcripts[sel.id] || []), { k: 'user', text: txt }] },
+      chatText: ''
+    }));
+    this._reply = setTimeout(() => {
+      this.setState(st => ({
+        transcripts: { ...st.transcripts, [sel.id]: [...(st.transcripts[sel.id] || []), { k: 'text', text: 'Got it — I\u2019ll factor that in and keep going.' }] }
+      }));
+      this.addEvent({ sid: sel.id, kind: 'info', verb: 'received your message and adjusted course', own: true });
+    }, 1600);
+  }
+
+  shortFrom(txt) {
+    return txt.toLowerCase().split(/\s+/).slice(0, 2).join('-').replace(/[^a-z0-9-]/g, '') || 'new-agent';
+  }
+  makeSession(id, task, opts) {
+    const short = this.shortFrom(task);
+    return {
+      id,
+      name: (opts.rolePrefix || '') + short,
+      short,
+      baseName: short,
+      teamId: opts.teamId || null,
+      lead: !!opts.lead,
+      status: 'running',
+      statusLine: 'Starting up…',
+      phase: 'planning', msDone: 0, msTotal: 4,
+      startedAt: Date.now(), cost: 0,
+      model: opts.model, effort: opts.effort, ctx: 1, dep: ''
+    };
+  }
+
+  spawn() {
+    const st = this.state;
+    if (st.modalMode === 'new') {
+      const name = st.teamName.trim() || 'New team';
+      const goal = st.promptText.trim() || 'No goal set yet.';
+      const teamId = 'tm' + st.nextId;
+      let nid = st.nextId + 1;
+      const rows = st.draftMembers.length ? st.draftMembers : this.freshDraft();
+      const sessions = [];
+      const transcripts = {};
+      rows.forEach((r, i) => {
+        const task = r.task.trim() || (i === 0 ? 'Coordinate the work' : 'Task ' + (i + 1));
+        const id = 's' + nid++;
+        const sess = this.makeSession(id, task, { teamId, lead: i === 0, model: r.model, effort: r.effort, rolePrefix: i === 0 ? 'Lead · ' : 'Worker · ' });
+        sessions.push(sess);
+        transcripts[id] = i === 0
+          ? [{ k: 'note', text: 'Team goal: ' + goal }, { k: 'text', text: 'Breaking the goal into tasks and coordinating ' + (rows.length - 1) + ' worker' + (rows.length === 2 ? '' : 's') + '.' }]
+          : [{ k: 'note', text: 'Task from lead: ' + task }, { k: 'text', text: 'Understood. Getting started.' }];
+      });
+      this.setState(s2 => ({
+        teams: [...s2.teams, { id: teamId, name, goal, startedAt: Date.now() }],
+        sessions: [...s2.sessions, ...sessions],
+        transcripts: { ...s2.transcripts, ...transcripts },
+        nextId: nid,
+        modalOpen: false,
+        tab: 'teams'
+      }));
+      this.addEvent({ sid: sessions[0].id, kind: 'info', own: true, verb: 'team "' + name + '" spawned by you — ' + sessions.length + ' agents' });
+      return;
+    }
+    const txt = st.promptText.trim() || 'New task';
+    const id = 's' + st.nextId;
+    if (st.modalMode === 'existing' && st.targetTeamId) {
+      const team = st.teams.find(tm => tm.id === st.targetTeamId);
+      const sess = this.makeSession(id, txt, { teamId: st.targetTeamId, model: st.memberModel, effort: st.memberEffort, rolePrefix: 'Worker · ' });
+      this.setState(s2 => ({
+        sessions: [...s2.sessions, sess],
+        transcripts: { ...s2.transcripts, [id]: [{ k: 'note', text: 'Task from you: ' + txt }, { k: 'text', text: 'Understood. Syncing with the lead\u2019s plan and getting started.' }] },
+        nextId: s2.nextId + 1,
+        modalOpen: false
+      }));
+      this.addEvent({ sid: id, kind: 'info', own: true, verb: 'spawned by you — joined ' + (team ? team.name : 'team') });
+      return;
+    }
+    const sess = this.makeSession(id, txt, { model: st.memberModel, effort: st.memberEffort });
+    sess.name = txt.length > 26 ? txt.slice(0, 24) + '…' : txt;
+    sess.baseName = sess.name;
+    this.setState(s2 => ({
+      sessions: [...s2.sessions, sess],
+      transcripts: { ...s2.transcripts, [id]: [{ k: 'note', text: 'Task from you: ' + txt }, { k: 'text', text: 'Understood. Building a plan and getting started.' }] },
+      nextId: s2.nextId + 1,
+      modalOpen: false
+    }));
+    this.addEvent({ sid: id, kind: 'info', own: true, verb: 'spawned as independent session' });
+  }
+}
+
+</script>
+</body>
+</html>

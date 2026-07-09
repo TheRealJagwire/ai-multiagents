@@ -1,0 +1,29 @@
+{
+  "name": "my-desktop-app",
+  "version": "0.1.0",
+  "exports": "./main.ts",
+  "nodeModulesDir": "auto",
+  "exclude": ["dist", "release", "node_modules"],
+  "compilerOptions": {
+    "strict": true
+  },
+  "tasks": {
+    "build": "deno run -A npm:vite build",
+    "dev": "deno task build && deno desktop -A --hmr --include ./dist main.ts",
+    "build:macos": "deno task build && deno desktop -A --include ./dist -o ./release/macos/MyApp.app main.ts",
+    "build:windows": "deno task build && deno desktop -A --include ./dist -o ./release/windows/MyApp main.ts",
+    "build:linux": "deno task build && deno desktop -A --include ./dist -o ./release/linux/my-app main.ts"
+  },
+  "desktop": {
+    "app": {
+      "name": "My Desktop App",
+      "identifier": "com.example.mydesktopapp"
+    },
+    "backend": "webview",
+    "output": {
+      "macos": "./release/macos/MyApp.app",
+      "windows": "./release/windows/MyApp",
+      "linux": "./release/linux/my-app"
+    }
+  }
+}

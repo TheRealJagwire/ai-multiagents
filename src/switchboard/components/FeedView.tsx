@@ -1,0 +1,77 @@
+import type { ComponentChildren } from "preact";
+import { activeFilter, feedWindowSize, filteredStream, lastSeen, sessionFilter } from "../store.ts";
+import { expandFeedWindow } from "../actions.ts";
+import { PinnedBlock } from "./PinnedBlock.tsx";
+import { ActivityHeader } from "./ActivityHeader.tsx";
+import { WhileAwayDigest } from "./WhileAwayDigest.tsx";
+import { EventRow } from "./EventRow.tsx";
+import { EventCard } from "./EventCard.tsx";
+
+function isCompact(kind: string, resolved: unknown): boolean {
+  return kind === "info" || resolved !== null;
+}
+
+export function FeedView() {
+  const stream = filteredStream.value;
+  const windowed = stream.slice(0, feedWindowSize.value);
+  const hiddenCount = stream.length - windowed.length;
+  const unfiltered = !sessionFilter.value && activeFilter.value === "all";
+  const dividerIndex = unfiltered ? windowed.findIndex((e) => e.ts <= lastSeen.value) : -1;
+
+  const nodes: ComponentChildren[] = [];
+  windowed.forEach((event, i) => {
+    if (i === dividerIndex && dividerIndex > 0) {
+      nodes.push(<CaughtUpDivider key="divider" />);
+    }
+    nodes.push(
+      isCompact(event.kind, event.resolved)
+        ? <EventRow key={event.id} event={event} />
+        : <EventCard key={event.id} event={event} />,
+    );
+  });
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "18px 26px" }}>
+      <PinnedBlock />
+      <ActivityHeader />
+      <WhileAwayDigest />
+
+      {stream.length === 0 && (
+        <div style={{ textAlign: "center", fontSize: 13, color: "var(--sb-text-5)", padding: "40px 0" }}>
+          Nothing here — you're all caught up.
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{nodes}</div>
+
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={expandFeedWindow}
+          style={{
+            display: "block",
+            margin: "14px auto 0",
+            fontSize: 11.5,
+            fontWeight: 600,
+            color: "var(--sb-blue)",
+            cursor: "pointer",
+          }}
+        >
+          Show {Math.min(hiddenCount, 150)} more
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CaughtUpDivider() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "8px 0" }}>
+      <div style={{ flex: 1, height: 1, background: "var(--sb-border)" }} />
+      <span style={{ fontSize: 10.5, letterSpacing: ".06em", color: "var(--sb-text-5)" }}>
+        CAUGHT UP TO HERE
+      </span>
+      <div style={{ flex: 1, height: 1, background: "var(--sb-border)" }} />
+    </div>
+  );
+}
