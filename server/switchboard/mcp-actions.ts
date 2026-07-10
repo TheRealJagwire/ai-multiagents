@@ -33,3 +33,24 @@ export function deleteMcpConfig(id: string): void {
   // spawn-time lookups filter to configs that still exist (see
   // agent-sessions.ts), so a deleted config never breaks an in-flight spawn.
 }
+
+// Editing a config only ever affects future spawns — sessions already
+// running hold their own resolved mcpServers snapshot from spawn time (see
+// agent-sessions.ts's buildMcpServers), so there's nothing to migrate here.
+export function updateMcpConfig(id: string, input: McpConfigInput): McpConfig | null {
+  const existing = state.mcpConfigs.find((c) => c.id === id);
+  if (!existing) return null;
+
+  const updated: McpConfig = {
+    id,
+    name: input.name.trim() || "Unnamed server",
+    transport: input.transport,
+    command: input.command.trim(),
+    args: input.args,
+    env: input.env,
+    url: input.url.trim(),
+    headers: input.headers,
+  };
+  pushMcpConfigsReplace(state.mcpConfigs.map((c) => (c.id === id ? updated : c)));
+  return updated;
+}

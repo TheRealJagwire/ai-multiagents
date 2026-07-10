@@ -1,10 +1,11 @@
 import type { JSX } from "preact";
 import type { ArtifactPreviewStyle, FeedEvent } from "../types.ts";
-import { lastSeen, sessionsById } from "../store.ts";
+import { lastSeen, now, sessionsById } from "../store.ts";
 import { openReview } from "../actions.ts";
 import { relativeTime } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { FactChips } from "./FactChips.tsx";
+import { Markdown } from "./Markdown.tsx";
 
 interface EventCardProps {
   event: FeedEvent;
@@ -35,7 +36,7 @@ export function EventCard({ event }: EventCardProps) {
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        background: unread ? "#fffcf5" : "var(--sb-surface)",
+        background: unread ? "var(--sb-unread-bg)" : "var(--sb-surface)",
         borderRadius: "var(--sb-radius-card)",
         padding: "14px 16px",
         boxShadow: "var(--sb-shadow-card)",
@@ -54,15 +55,20 @@ export function EventCard({ event }: EventCardProps) {
         <span style={{ fontSize: 12.5, fontWeight: 600 }}>{session?.name ?? event.sid}</span>
         <span style={{ fontSize: 11.5, color: "var(--sb-text-5)" }}>{event.verb}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--sb-text-6)" }}>{relativeTime(event.ts)}</span>
+        <span style={{ fontSize: 11, color: "var(--sb-text-6)" }}>{relativeTime(event.ts, now.value)}</span>
       </div>
 
-      {event.body && <div style={{ fontSize: 12.5, color: "var(--sb-text-2)" }}>{event.body}</div>}
+      {event.body && (
+        <div style={{ fontSize: 12.5, color: "var(--sb-text-2)" }}>
+          <Markdown text={event.body} />
+        </div>
+      )}
 
       <FactChips verified={event.chipsV} claimed={event.chipsC} />
 
       {event.artName && (
-        <div
+        <button
+          type="button"
           onClick={() => openReview(event.id)}
           style={{
             display: "flex",
@@ -72,6 +78,8 @@ export function EventCard({ event }: EventCardProps) {
             borderRadius: 8,
             padding: "8px 10px",
             cursor: "pointer",
+            width: "100%",
+            textAlign: "left",
           }}
         >
           <div
@@ -84,7 +92,7 @@ export function EventCard({ event }: EventCardProps) {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 9,
+              fontSize: 10,
               fontWeight: 700,
               color: "var(--sb-text-4)",
               flex: "none",
@@ -96,7 +104,7 @@ export function EventCard({ event }: EventCardProps) {
             <div style={{ fontSize: 12.5, fontWeight: 600 }}>{event.artName}</div>
             <div style={{ fontSize: 11, color: "var(--sb-text-5)" }}>{event.artMeta}</div>
           </div>
-        </div>
+        </button>
       )}
 
       {event.artPreview && (

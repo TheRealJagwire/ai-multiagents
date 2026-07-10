@@ -21,6 +21,8 @@
     "npm:@preact/preset-vite@*": "2.10.5_@babel+core@7.29.7_vite@6.4.3_preact@10.29.4",
     "npm:@preact/preset-vite@^2.9.3": "2.10.5_@babel+core@7.29.7_vite@6.4.3_preact@10.29.4",
     "npm:@preact/signals@^2.0.1": "2.9.3_preact@10.29.4",
+    "npm:dompurify@^3.1.0": "3.4.11",
+    "npm:marked@13": "13.0.3",
     "npm:npm@latest": "11.18.0",
     "npm:preact@^10.24.3": "10.29.4",
     "npm:tsc@*": "2.0.4",
@@ -692,6 +694,9 @@
     "@types/estree@1.0.9": {
       "integrity": "sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg=="
     },
+    "@types/trusted-types@2.0.7": {
+      "integrity": "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="
+    },
     "accepts@2.0.0": {
       "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
       "dependencies": [
@@ -845,6 +850,12 @@
       "integrity": "sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==",
       "dependencies": [
         "domelementtype"
+      ]
+    },
+    "dompurify@3.4.11": {
+      "integrity": "sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==",
+      "optionalDependencies": [
+        "@types/trusted-types"
       ]
     },
     "domutils@3.2.2": {
@@ -1140,6 +1151,10 @@
       "dependencies": [
         "@jridgewell/sourcemap-codec"
       ]
+    },
+    "marked@13.0.3": {
+      "integrity": "sha512-rqRix3/TWzE9rIoFGIn8JmsVfhiuC8VIQ8IdX5TfzmeBucdY05/0UlzKaw0eVtpcN/OdVFpBk7CjKGo9iHJ/zA==",
+      "bin": true
     },
     "math-intrinsics@1.1.0": {
       "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="
@@ -1523,6 +1538,8 @@
         "npm:@anthropic-ai/sdk@0.110",
         "npm:@preact/preset-vite@^2.9.3",
         "npm:@preact/signals@^2.0.1",
+        "npm:dompurify@^3.1.0",
+        "npm:marked@13",
         "npm:preact@^10.24.3",
         "npm:typescript@^5.7.2",
         "npm:vite@^6.0.7"

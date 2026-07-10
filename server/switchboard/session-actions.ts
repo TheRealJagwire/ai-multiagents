@@ -39,8 +39,10 @@ function terminateAgentProcess(sid: string): void {
   (async () => {
     await handle.query.interrupt().catch(() => {});
     handle.query.close();
-    await removeWorktree(handle.dir, handle.worktreePath);
-    pushFeedEvent({ sid, kind: "info", own: false, verb: `worktree removed — work saved on branch ${handle.branch}` });
+    if (handle.branch) {
+      await removeWorktree(handle.dir, handle.worktreePath);
+      pushFeedEvent({ sid, kind: "info", own: false, verb: `worktree removed — work saved on branch ${handle.branch}` });
+    }
   })().catch((err) => {
     pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to clean up worktree: ${String(err)}` });
   });

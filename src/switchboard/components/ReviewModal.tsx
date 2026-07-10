@@ -1,6 +1,7 @@
 import { eventsById, reviewOpen, revComment, sessionsById } from "../store.ts";
 import { approveArtifact, closeReview, requestChanges, setRevComment } from "../actions.ts";
 import { previewStyles } from "./EventCard.tsx";
+import { useAutoGrow } from "../hooks.ts";
 
 function resolvedLabel(kind: string, resolved: string | null): string | null {
   if (resolved === "approved-art") return "✓ Approved by you";
@@ -17,6 +18,7 @@ export function ReviewModal() {
   const owner = sessionsById.value.get(event.sid);
   const meta = [owner?.short, event.artMeta].filter(Boolean).join(" · ");
   const status = resolvedLabel(event.kind, event.resolved);
+  const noteRef = useAutoGrow(revComment.value, 130);
 
   return (
     <div
@@ -24,7 +26,7 @@ export function ReviewModal() {
       style={{
         position: "absolute",
         inset: 0,
-        background: "rgba(28,27,24,.28)",
+        background: "var(--sb-overlay)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -66,7 +68,7 @@ export function ReviewModal() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 9,
+              fontSize: 10,
               fontWeight: 700,
               color: "var(--sb-text-5)",
             }}
@@ -117,10 +119,12 @@ export function ReviewModal() {
           {event.resolved === null
             ? (
               <>
-                <input
-                  placeholder="Optional note for the agent…"
+                <textarea
+                  ref={noteRef}
+                  placeholder="Optional note for the agent… (Shift+Enter for a new line)"
                   value={revComment.value}
-                  onInput={(e) => setRevComment((e.target as HTMLInputElement).value)}
+                  onInput={(e) => setRevComment((e.target as HTMLTextAreaElement).value)}
+                  rows={1}
                   style={{
                     border: "1px solid var(--sb-border-3)",
                     borderRadius: 9,
@@ -129,6 +133,8 @@ export function ReviewModal() {
                     fontFamily: "var(--sb-font-sans)",
                     outline: "none",
                     color: "var(--sb-text-1)",
+                    resize: "none",
+                    overflowY: "auto",
                   }}
                 />
                 <div style={{ display: "flex", gap: 8 }}>
@@ -138,7 +144,7 @@ export function ReviewModal() {
                     style={{
                       padding: "7px 18px",
                       background: "var(--sb-primary)",
-                      color: "#fff",
+                      color: "var(--sb-on-primary)",
                       borderRadius: 8,
                       fontSize: 12.5,
                       fontWeight: 600,

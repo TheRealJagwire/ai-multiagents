@@ -1,4 +1,4 @@
-import { focusedPinnedIndex, pinnedShowAll, pinnedSorted } from "../store.ts";
+import { focusedPinnedId, pinnedShowAll, pinnedSorted } from "../store.ts";
 import { togglePinnedShowAll } from "../actions.ts";
 import { PinnedCard } from "./PinnedCard.tsx";
 
@@ -16,7 +16,7 @@ export function PinnedBlock() {
         <span
           style={{
             background: "var(--sb-waiting-dot)",
-            color: "#fff",
+            color: "var(--sb-on-primary)",
             borderRadius: "50%",
             width: 18,
             height: 18,
@@ -33,17 +33,22 @@ export function PinnedBlock() {
       </div>
 
       {visible.map((event) => (
-        <PinnedCard key={event.id} event={event} focused={pinned.indexOf(event) === focusedPinnedIndex.value} />
+        <PinnedCard key={event.id} event={event} focused={event.id === focusedPinnedId.value} />
       ))}
 
       {pinned.length > 2 && (
-        <span
+        <button
+          type="button"
           onClick={togglePinnedShowAll}
           style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer" }}
         >
           {pinnedShowAll.value ? "Collapse" : `+${hiddenCount} more waiting — show all`}
-        </span>
+        </button>
       )}
+
+      <div style={{ fontSize: 10.5, color: "var(--sb-text-6)" }}>
+        j/k navigate · y approve once · Y allow for session · n deny · ? for shortcuts
+      </div>
     </div>
   );
 }

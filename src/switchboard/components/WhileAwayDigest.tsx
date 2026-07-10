@@ -25,25 +25,27 @@ export function WhileAwayDigest() {
           While you were away
         </span>
         <span style={{ flex: 1 }} />
-        <span
+        <button
+          type="button"
           onClick={dismissDigest}
           style={{ fontSize: 11, color: "var(--sb-text-4)", cursor: "pointer" }}
         >
           Dismiss
-        </span>
+        </button>
       </div>
       <div style={{ fontSize: 11.5, color: "var(--sb-text-4)" }}>
         {awayMinutes}m away · {unreadCount.value} events
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 2 }}>
         {unread.map((event) => (
-          <div
+          <button
+            type="button"
             key={event.id}
             onClick={() => setSessionFilter(event.sid)}
-            style={{ fontSize: 12, cursor: "pointer" }}
+            style={{ fontSize: 12, cursor: "pointer", textAlign: "left" }}
           >
             <b>{sessionsById.value.get(event.sid)?.name ?? event.sid}</b> — {event.verb}
-          </div>
+          </button>
         ))}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { railGroups, selectedSessionId } from "../store.ts";
+import { railGroups, selectedSessionId, sessions } from "../store.ts";
 import { openSession } from "../actions.ts";
 import { statusColor } from "../statusColors.ts";
 
@@ -21,7 +21,13 @@ export function LeftRail() {
         flex: "none",
       }}
     >
-      {railGroups.value.map((group) => (
+      {sessions.value.length === 0 && (
+        <div style={{ fontSize: 11.5, color: "var(--sb-text-5)", padding: "8px", lineHeight: 1.4 }}>
+          Sessions appear here once you spawn one.
+        </div>
+      )}
+
+      {sessions.value.length > 0 && railGroups.value.map((group) => (
         <div key={group.id ?? "independent"} style={{ marginBottom: 14 }}>
           <div
             style={{
@@ -39,7 +45,8 @@ export function LeftRail() {
             const colors = statusColor(session.status);
             const selected = selectedSessionId.value === session.id;
             return (
-              <div
+              <button
+                type="button"
                 key={session.id}
                 onClick={() => openSession(session.id)}
                 style={{
@@ -50,6 +57,8 @@ export function LeftRail() {
                   borderRadius: 6,
                   cursor: "pointer",
                   background: selected ? "var(--sb-surface-3)" : "transparent",
+                  width: "100%",
+                  textAlign: "left",
                 }}
               >
                 <span className="sb-dot" style={{ width: 8, height: 8, background: colors.dot }} />
@@ -77,7 +86,7 @@ export function LeftRail() {
                     {session.statusLine}
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

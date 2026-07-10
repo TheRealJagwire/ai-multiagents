@@ -3,10 +3,12 @@ import {
   activeFilter,
   type ActivityFilter,
   activeTab,
-  chatText,
+  chatDrafts,
   confirmStop,
+  connected,
   deleteSessionConfirm,
   deleteTeamConfirm,
+  dirSuggestions,
   type DraftMember,
   digestDismissed,
   draftMembers,
@@ -16,11 +18,16 @@ import {
   feedWindowSize,
   grants,
   grantsOpen,
+  keyboardHelpOpen,
   lastSeen,
+  MAX_RECENT_DIRS,
   mcpConfigs,
+  mcpDeleteConfirm,
+  mcpEditingId,
   mcpFormArgsText,
   mcpFormCommand,
   mcpFormEnvText,
+  mcpFormError,
   mcpFormHeadersText,
   mcpFormName,
   mcpFormTransport,
@@ -33,8 +40,18 @@ import {
   moveConfirm,
   pinnedShowAll,
   promptText,
+  RECENT_DIRS_KEY,
+  recentDirs,
   reviewOpen,
   revComment,
+  scheduleDeleteConfirm,
+  scheduleError,
+  scheduleMsgAt,
+  scheduleMsgSessionId,
+  scheduleMsgText,
+  scheduleMsgValidationError,
+  scheduledModalOpen,
+  schedules,
   searchQuery,
   selectedSessionId,
   sessionFilter,
@@ -44,18 +61,45 @@ import {
   spawnBaseRef,
   spawnCreateNew,
   spawnDir,
+  spawnError,
   spawnLeadPlans,
   spawnMcpConfigIds,
   type SpawnMode,
+  spawnNoWorktree,
+  type RecurrenceMode,
+  spawnRecurrenceDays,
+  spawnRecurrenceEvery,
+  spawnRecurrenceMode,
+  spawnRecurrenceUnit,
+  spawnScheduleAt,
+  spawnScheduleEnabled,
+  spawnSubmitting,
+  spawnValidationError,
   startWorkersConfirm,
   type Tab,
   targetTeamId,
   teamName,
   teams,
-  toast,
+  theme,
+  THEME_KEY,
+  type ThemeMode,
+  toasts,
   transcripts,
 } from "./store.ts";
-import type { Effort, FeedEvent, Grant, McpConfig, McpTransport, Model, Session, Snapshot, Team, TranscriptMessage } from "./types.ts";
+import type {
+  Effort,
+  FeedEvent,
+  Grant,
+  McpConfig,
+  McpTransport,
+  Model,
+  RecurrenceUnit,
+  Schedule,
+  Session,
+  Snapshot,
+  Team,
+  TranscriptMessage,
+} from "./types.ts";
 import { modelLabel } from "./format.ts";
 
 export function ingestSnapshot(snapshot: Snapshot): void {
@@ -65,10 +109,28 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   grants.value = snapshot.grants;
   transcripts.value = snapshot.transcripts;
   mcpConfigs.value = snapshot.mcpConfigs;
+  schedules.value = snapshot.schedules;
+}
+
+// The snapshot is otherwise only ever fetched once at mount — after a real
+// reconnect (not the initial "open" every EventSource fires on first
+// connect), the SSE stream resumes on top of whatever state we last had,
+// which is stale if the backend restarted meanwhile. Re-fetching here means
+// a reconnect always lands on ground truth instead of silently drifting.
+export async function handleConnectionChange(isConnected: boolean): Promise<void> {
+  const wasDisconnected = !connected.value;
+  connected.value = isConnected;
+  if (isConnected && wasDisconnected) {
+    ingestSnapshot(await api.fetchSnapshot());
+  }
 }
 
 export function replaceMcpConfigs(configs: McpConfig[]): void {
   mcpConfigs.value = configs;
+}
+
+export function replaceSchedules(nextSchedules: Schedule[]): void {
+  schedules.value = nextSchedules;
 }
 
 export function ingestFeedEvent(event: FeedEvent): void {
@@ -142,7 +204,6 @@ export function dismissDigest(): void {
 export function openSession(sid: string): void {
   selectedSessionId.value = sid;
   confirmStop.value = false;
-  chatText.value = "";
 }
 
 export function closeSession(): void {
@@ -158,12 +219,30 @@ export function cancelStop(): void {
   confirmStop.value = false;
 }
 
-export function setChatText(text: string): void {
-  chatText.value = text;
+export function setChatText(sid: string, text: string): void {
+  chatDrafts.value = { ...chatDrafts.value, [sid]: text };
 }
 
 export function setActiveTab(tab: Tab): void {
   activeTab.value = tab;
+}
+
+// Jumps to the Feed tab and expands the pinned block so every card that
+// needs a decision is actually visible, not just the first two.
+export function goToPinned(): void {
+  activeTab.value = "feed";
+  pinnedShowAll.value = true;
+}
+
+export function applyTheme(mode: ThemeMode): void {
+  if (mode === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", mode);
+}
+
+export function setTheme(mode: ThemeMode): void {
+  theme.value = mode;
+  localStorage.setItem(THEME_KEY, mode);
+  applyTheme(mode);
 }
 
 export function toggleManageExpanded(sid: string): void {
@@ -179,25 +258,45 @@ export function cancelMoveConfirm(): void {
   moveConfirm.value = null;
 }
 
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
+const MAX_TOASTS = 3;
+const INFO_TOAST_MS = 5000;
+const UNDO_TOAST_MS = 9000; // undo-bearing toasts get longer to notice/act on
+
+let nextToastId = 0;
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function removeToast(id: number): void {
+  clearTimeout(toastTimers.get(id));
+  toastTimers.delete(id);
+  toasts.value = toasts.value.filter((t) => t.id !== id);
+}
 
 export function showToast(label: string, undo?: () => void): void {
-  clearTimeout(toastTimer);
-  toast.value = { label, undo };
-  toastTimer = setTimeout(() => {
-    toast.value = null;
-  }, 7000);
+  const id = nextToastId++;
+  // Cap the stack rather than let rapid actions pile up indefinitely — drop
+  // the oldest (and its timer) to make room, same as any bounded queue.
+  if (toasts.value.length >= MAX_TOASTS) {
+    removeToast(toasts.value[0].id);
+  }
+  toasts.value = [...toasts.value, { id, label, undo }];
+  toastTimers.set(id, setTimeout(() => removeToast(id), undo ? UNDO_TOAST_MS : INFO_TOAST_MS));
 }
 
-export function dismissToast(): void {
-  clearTimeout(toastTimer);
-  toast.value = null;
+function errMsg(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : "request failed";
 }
 
-export function undoToast(): void {
-  const undo = toast.value?.undo;
-  clearTimeout(toastTimer);
-  toast.value = null;
+function showErrorToast(label: string, err: unknown): void {
+  showToast(`${label} — ${errMsg(err)}`);
+}
+
+export function dismissToast(id: number): void {
+  removeToast(id);
+}
+
+export function undoToast(id: number): void {
+  const undo = toasts.value.find((t) => t.id === id)?.undo;
+  removeToast(id);
   undo?.();
 }
 
@@ -223,34 +322,65 @@ export function closeGrantsPopover(): void {
   grantsOpen.value = false;
 }
 
+export function toggleKeyboardHelp(): void {
+  keyboardHelpOpen.value = !keyboardHelpOpen.value;
+}
+
+export function closeKeyboardHelp(): void {
+  keyboardHelpOpen.value = false;
+}
+
 // Network-triggered resolution actions — thin pass-throughs so components
 // only ever import from actions.ts, never api.ts directly. The resulting
 // state change arrives back over the SSE stream (patchEvent/patchSession
-// above), not from these calls' return value.
-export function approveEvent(id: string, scope: "once" | "session"): Promise<void> {
+// above), not from these calls' return value. Each awaits its API call
+// before showing a toast: a success toast only ever appears once the server
+// has actually confirmed it, and a failure surfaces as an error toast
+// instead of silently doing nothing.
+export async function approveEvent(id: string, scope: "once" | "session"): Promise<void> {
   const event = eventsById.value.get(id);
   const session = event ? sessionsById.value.get(event.sid) : undefined;
-  if (session) showToast(`Approved ${session.short}`, () => api.undo(id));
-  return api.approveEvent(id, scope);
+  try {
+    await api.approveEvent(id, scope);
+    if (session) showToast(`Approved ${session.short}`, () => api.undo(id));
+  } catch (err) {
+    showErrorToast(`Couldn't approve${session ? ` ${session.short}` : ""}`, err);
+  }
 }
 
-export function denyEvent(id: string): Promise<void> {
+export async function denyEvent(id: string): Promise<void> {
   const event = eventsById.value.get(id);
   const session = event ? sessionsById.value.get(event.sid) : undefined;
-  if (session) showToast(`Denied ${session.short}`, () => api.undo(id));
-  return api.denyEvent(id);
+  try {
+    await api.denyEvent(id);
+    if (session) showToast(`Denied ${session.short}`, () => api.undo(id));
+  } catch (err) {
+    showErrorToast(`Couldn't deny${session ? ` ${session.short}` : ""}`, err);
+  }
 }
 
-export function retryEvent(id: string): Promise<void> {
-  return api.retryEvent(id);
+export async function retryEvent(id: string): Promise<void> {
+  try {
+    await api.retryEvent(id);
+  } catch (err) {
+    showErrorToast("Couldn't retry", err);
+  }
 }
 
-export function applyAltFix(id: string): Promise<void> {
-  return api.applyAltFix(id);
+export async function applyAltFix(id: string): Promise<void> {
+  try {
+    await api.applyAltFix(id);
+  } catch (err) {
+    showErrorToast("Couldn't apply fix", err);
+  }
 }
 
-export function togglePause(id: string): Promise<void> {
-  return api.togglePause(id);
+export async function togglePause(id: string): Promise<void> {
+  try {
+    await api.togglePause(id);
+  } catch (err) {
+    showErrorToast("Couldn't change pause state", err);
+  }
 }
 
 export async function confirmStopSession(id: string): Promise<void> {
@@ -258,9 +388,13 @@ export async function confirmStopSession(id: string): Promise<void> {
   // "unarchive" — matching session-actions.ts's stopSession, this stays
   // honestly irreversible instead of showing an Undo link that would lie.
   const session = sessionsById.value.get(id);
-  if (session) showToast(`Stopped ${session.short}`);
-  await api.stopSession(id);
-  closeSession();
+  try {
+    await api.stopSession(id);
+    if (session) showToast(`Stopped ${session.short}`);
+    closeSession();
+  } catch (err) {
+    showErrorToast(`Couldn't stop${session ? ` ${session.short}` : ""}`, err);
+  }
 }
 
 export function askDeleteSession(id: string): void {
@@ -277,9 +411,13 @@ export function cancelDeleteSession(): void {
 export async function confirmDeleteSession(id: string): Promise<void> {
   const session = sessionsById.value.get(id);
   deleteSessionConfirm.value = null;
-  if (session) showToast(`Deleted ${session.short}`);
-  await api.deleteSession(id);
-  closeSession();
+  try {
+    await api.deleteSession(id);
+    if (session) showToast(`Deleted ${session.short}`);
+    closeSession();
+  } catch (err) {
+    showErrorToast(`Couldn't delete${session ? ` ${session.short}` : ""}`, err);
+  }
 }
 
 export function askDeleteTeam(id: string): void {
@@ -293,8 +431,12 @@ export function cancelDeleteTeam(): void {
 export async function confirmDeleteTeam(id: string): Promise<void> {
   const team = teams.value.find((t) => t.id === id);
   deleteTeamConfirm.value = null;
-  if (team) showToast(`Deleted ${team.name}`);
-  await api.deleteTeam(id);
+  try {
+    await api.deleteTeam(id);
+    if (team) showToast(`Deleted ${team.name}`);
+  } catch (err) {
+    showErrorToast(`Couldn't delete${team ? ` ${team.name}` : ""}`, err);
+  }
 }
 
 export function askStartWorkers(id: string): void {
@@ -308,82 +450,149 @@ export function cancelStartWorkers(): void {
 export async function confirmStartWorkers(id: string): Promise<void> {
   const team = teams.value.find((t) => t.id === id);
   startWorkersConfirm.value = null;
-  if (team) showToast(`Starting workers for ${team.name}`);
-  await api.startWorkers(id);
+  try {
+    await api.startWorkers(id);
+    if (team) showToast(`Starting workers for ${team.name}`);
+  } catch (err) {
+    showErrorToast(`Couldn't start workers${team ? ` for ${team.name}` : ""}`, err);
+  }
 }
 
-export function sendMessage(id: string, text: string): Promise<void> {
-  return api.sendMessage(id, text);
+export async function sendMessage(id: string, text: string): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  setChatText(id, "");
+  try {
+    await api.sendMessage(id, trimmed);
+  } catch (err) {
+    setChatText(id, text); // failed send — put the draft back rather than lose it
+    showErrorToast("Couldn't send message", err);
+  }
 }
 
-export function cancelPendingModel(id: string): Promise<void> {
-  return api.cancelPendingModel(id);
+export async function cancelPendingModel(id: string): Promise<void> {
+  try {
+    await api.cancelPendingModel(id);
+  } catch (err) {
+    showErrorToast("Couldn't cancel model change", err);
+  }
 }
 
-export function cancelPendingEffort(id: string): Promise<void> {
-  return api.cancelPendingEffort(id);
+export async function cancelPendingEffort(id: string): Promise<void> {
+  try {
+    await api.cancelPendingEffort(id);
+  } catch (err) {
+    showErrorToast("Couldn't cancel effort change", err);
+  }
 }
 
-export function queueModelChange(id: string, model: Model): Promise<void> {
+export async function queueModelChange(id: string, model: Model): Promise<void> {
   const session = sessionsById.value.get(id);
-  if (!session) return api.queueModelChange(id, model);
+  if (!session) {
+    try {
+      await api.queueModelChange(id, model);
+    } catch (err) {
+      showErrorToast("Couldn't queue model change", err);
+    }
+    return;
+  }
 
   if (session.pendingModel === model || session.model === model) {
     return cancelPendingModel(id);
   }
-  showToast(`Queued for ${session.short}: ${modelLabel(model)} at next step`, () => cancelPendingModel(id));
-  return api.queueModelChange(id, model);
+  try {
+    await api.queueModelChange(id, model);
+    showToast(`Queued for ${session.short}: ${modelLabel(model)} at next step`, () => cancelPendingModel(id));
+  } catch (err) {
+    showErrorToast(`Couldn't queue model change for ${session.short}`, err);
+  }
 }
 
-export function queueEffortChange(id: string, effort: Effort): Promise<void> {
+export async function queueEffortChange(id: string, effort: Effort): Promise<void> {
   const session = sessionsById.value.get(id);
-  if (!session) return api.queueEffortChange(id, effort);
+  if (!session) {
+    try {
+      await api.queueEffortChange(id, effort);
+    } catch (err) {
+      showErrorToast("Couldn't queue effort change", err);
+    }
+    return;
+  }
 
   if (session.pendingEffort === effort || session.effort === effort) {
     return cancelPendingEffort(id);
   }
-  showToast(`Queued for ${session.short}: ${effort} effort at next step`, () => cancelPendingEffort(id));
-  return api.queueEffortChange(id, effort);
+  try {
+    await api.queueEffortChange(id, effort);
+    showToast(`Queued for ${session.short}: ${effort} effort at next step`, () => cancelPendingEffort(id));
+  } catch (err) {
+    showErrorToast(`Couldn't queue effort change for ${session.short}`, err);
+  }
 }
 
-export function cancelMove(id: string): Promise<void> {
-  return api.cancelMove(id);
+export async function cancelMove(id: string): Promise<void> {
+  try {
+    await api.cancelMove(id);
+  } catch (err) {
+    showErrorToast("Couldn't cancel move", err);
+  }
 }
 
-export function queueMove(sid: string, target: string | null): Promise<void> {
+export async function queueMove(sid: string, target: string | null): Promise<void> {
   const session = sessionsById.value.get(sid);
   moveConfirm.value = null;
-  if (session) {
-    showToast(`Move queued for ${session.short} — hands off at next step`, () => cancelMove(sid));
+  try {
+    await api.queueMove(sid, target);
+    if (session) {
+      showToast(`Move queued for ${session.short} — hands off at next step`, () => cancelMove(sid));
+    }
+  } catch (err) {
+    showErrorToast(`Couldn't queue move${session ? ` for ${session.short}` : ""}`, err);
   }
-  return api.queueMove(sid, target);
 }
 
-export function makeLead(sid: string): Promise<void> {
+export async function makeLead(sid: string): Promise<void> {
   const session = sessionsById.value.get(sid);
   const previousLead = session?.teamId
     ? [...sessionsById.value.values()].find((s) => s.teamId === session.teamId && s.lead)
     : undefined;
-  if (session) {
-    showToast(`Promoted ${session.short} to lead`, previousLead ? () => makeLead(previousLead.id) : undefined);
+  try {
+    await api.makeLead(sid);
+    if (session) {
+      showToast(`Promoted ${session.short} to lead`, previousLead ? () => makeLead(previousLead.id) : undefined);
+    }
+  } catch (err) {
+    showErrorToast(`Couldn't promote${session ? ` ${session.short}` : ""}`, err);
   }
-  return api.makeLead(sid);
 }
 
 export async function approveArtifact(id: string): Promise<void> {
-  await api.approveArtifact(id);
-  closeReview();
+  try {
+    await api.approveArtifact(id);
+    closeReview();
+  } catch (err) {
+    showErrorToast("Couldn't approve artifact", err);
+  }
 }
 
 export async function requestChanges(id: string): Promise<void> {
-  await api.requestChanges(id, revComment.value);
-  closeReview();
+  try {
+    await api.requestChanges(id, revComment.value);
+    closeReview();
+  } catch (err) {
+    showErrorToast("Couldn't request changes", err);
+  }
 }
 
-export function revokeGrant(id: string): Promise<void> {
+export async function revokeGrant(id: string): Promise<void> {
   const grant = grants.value.find((g) => g.id === id);
-  if (grant) showToast(`Revoked ${grant.pattern}`, () => api.undo(id));
-  return api.revokeGrant(id);
+  try {
+    await api.revokeGrant(id);
+    if (grant) showToast(`Revoked ${grant.pattern}`, () => api.undo(id));
+  } catch (err) {
+    showErrorToast("Couldn't revoke grant", err);
+  }
 }
 
 function freshDraft(): DraftMember[] {
@@ -393,8 +602,11 @@ function freshDraft(): DraftMember[] {
   ];
 }
 
-export function openSpawnModal(mode: SpawnMode, teamId?: string): void {
-  modalMode.value = mode;
+// Full field reset — only ever called for a genuinely new task (switching
+// which kind of thing you're spawning, or after a spawn actually succeeds).
+// A stray Escape/backdrop-click close must never trigger this, or a long
+// typed-out team goal gets silently thrown away.
+function resetSpawnFields(mode: SpawnMode, teamId?: string): void {
   promptText.value = "";
   teamName.value = "";
   targetTeamId.value = teamId ?? teams.value[0]?.id ?? null;
@@ -404,9 +616,28 @@ export function openSpawnModal(mode: SpawnMode, teamId?: string): void {
   spawnDir.value = "";
   spawnBaseRef.value = "HEAD";
   spawnCreateNew.value = false;
+  spawnNoWorktree.value = false;
   spawnMcpConfigIds.value = [];
   spawnLeadPlans.value = false;
   spawnAutonomousLead.value = false;
+  spawnScheduleEnabled.value = false;
+  spawnScheduleAt.value = "";
+  spawnRecurrenceMode.value = "none";
+  spawnRecurrenceEvery.value = 1;
+  spawnRecurrenceUnit.value = "days";
+  spawnRecurrenceDays.value = [];
+  spawnError.value = null;
+  dirSuggestions.value = [];
+}
+
+export function openSpawnModal(mode: SpawnMode, teamId?: string): void {
+  // Re-opening in the same mode (e.g. after a stray dismiss) preserves
+  // whatever was typed; only an actual mode switch resets the form.
+  if (mode !== modalMode.value) resetSpawnFields(mode, teamId);
+  modalMode.value = mode;
+  if (teamId) targetTeamId.value = teamId;
+  spawnError.value = null;
+  dirSuggestions.value = [];
   modalOpen.value = true;
 }
 
@@ -415,8 +646,8 @@ export function closeSpawnModal(): void {
 }
 
 export function setModalMode(mode: SpawnMode): void {
+  if (mode !== modalMode.value) resetSpawnFields(mode);
   modalMode.value = mode;
-  if (mode === "new" && draftMembers.value.length === 0) draftMembers.value = freshDraft();
   if (!targetTeamId.value) targetTeamId.value = teams.value[0]?.id ?? null;
 }
 
@@ -440,8 +671,43 @@ export function setMemberEffort(effort: Effort): void {
   memberEffort.value = effort;
 }
 
+let dirSuggestTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function setSpawnDir(value: string): void {
   spawnDir.value = value;
+
+  clearTimeout(dirSuggestTimer);
+  if (!value.trim().startsWith("/")) {
+    dirSuggestions.value = [];
+    return;
+  }
+  dirSuggestTimer = setTimeout(async () => {
+    try {
+      dirSuggestions.value = await api.listDirectories(value);
+    } catch {
+      dirSuggestions.value = [];
+    }
+  }, 200);
+}
+
+// One click instead of retyping a path from memory — used for both recent
+// dirs and live autocomplete suggestions.
+export function pickSpawnDir(dir: string): void {
+  spawnDir.value = dir;
+  dirSuggestions.value = [];
+}
+
+function rememberRecentDir(dir: string): void {
+  const trimmed = dir.trim();
+  if (!trimmed) return;
+  const next = [trimmed, ...recentDirs.value.filter((d) => d !== trimmed)].slice(0, MAX_RECENT_DIRS);
+  recentDirs.value = next;
+  try {
+    localStorage.setItem(RECENT_DIRS_KEY, JSON.stringify(next));
+  } catch {
+    // localStorage can be unavailable (e.g. restricted webview storage) —
+    // losing the recent-dirs convenience isn't worth failing the spawn over.
+  }
 }
 
 export function setSpawnBaseRef(value: string): void {
@@ -452,6 +718,20 @@ export function setSpawnCreateNew(value: boolean): void {
   spawnCreateNew.value = value;
 }
 
+// Skipping git/worktrees is incompatible with the fields that only make
+// sense when a worktree exists — creating a fresh repo just to not branch
+// off it, or a lead planning teammates that get spawned onto their own
+// branches — so checking this also clears those instead of leaving a
+// contradictory combination the backend would have to silently resolve.
+export function setSpawnNoWorktree(value: boolean): void {
+  spawnNoWorktree.value = value;
+  if (value) {
+    spawnCreateNew.value = false;
+    spawnLeadPlans.value = false;
+    spawnAutonomousLead.value = false;
+  }
+}
+
 export function setSpawnLeadPlans(value: boolean): void {
   spawnLeadPlans.value = value;
   if (!value) spawnAutonomousLead.value = false;
@@ -459,6 +739,32 @@ export function setSpawnLeadPlans(value: boolean): void {
 
 export function setSpawnAutonomousLead(value: boolean): void {
   spawnAutonomousLead.value = value;
+}
+
+export function setSpawnScheduleEnabled(value: boolean): void {
+  spawnScheduleEnabled.value = value;
+}
+
+export function setSpawnScheduleAt(value: string): void {
+  spawnScheduleAt.value = value;
+}
+
+export function setSpawnRecurrenceMode(mode: RecurrenceMode): void {
+  spawnRecurrenceMode.value = mode;
+}
+
+export function setSpawnRecurrenceEvery(value: number): void {
+  spawnRecurrenceEvery.value = value;
+}
+
+export function setSpawnRecurrenceUnit(unit: RecurrenceUnit): void {
+  spawnRecurrenceUnit.value = unit;
+}
+
+export function toggleSpawnRecurrenceDay(day: number): void {
+  spawnRecurrenceDays.value = spawnRecurrenceDays.value.includes(day)
+    ? spawnRecurrenceDays.value.filter((d) => d !== day)
+    : [...spawnRecurrenceDays.value, day].sort();
 }
 
 export function toggleSpawnMcpConfig(id: string): void {
@@ -482,43 +788,88 @@ export function setDraftMember(index: number, patch: Partial<DraftMember>): void
 
 export async function submitSpawn(): Promise<void> {
   const mode = modalMode.value;
-  if (mode === "new") {
-    const coordination = !spawnLeadPlans.value ? "classic" : (spawnAutonomousLead.value ? "autonomous" : "sequenced");
-    // In lead-plans mode only the lead's row (index 0) is meaningful — the
-    // rest of the team is determined by the lead, not typed in here.
-    const members = coordination === "classic" ? draftMembers.value : draftMembers.value.slice(0, 1);
-    await api.spawnSession({
-      mode: "new",
-      teamName: teamName.value,
-      goal: promptText.value,
-      dir: spawnDir.value,
-      baseRef: spawnBaseRef.value,
-      createNew: spawnCreateNew.value,
-      coordination,
-      mcpConfigIds: spawnMcpConfigIds.value,
-      members,
-    });
-  } else if (mode === "existing") {
-    await api.spawnSession({
-      mode: "existing",
-      task: promptText.value,
-      model: memberModel.value,
-      effort: memberEffort.value,
-      teamId: targetTeamId.value,
-    });
-  } else {
-    await api.spawnSession({
-      mode: "solo",
-      task: promptText.value,
-      model: memberModel.value,
-      effort: memberEffort.value,
-      dir: spawnDir.value,
-      baseRef: spawnBaseRef.value,
-      createNew: spawnCreateNew.value,
-      mcpConfigIds: spawnMcpConfigIds.value,
-    });
+  const validationError = spawnValidationError.value;
+  if (validationError) {
+    spawnError.value = validationError;
+    return;
   }
-  closeSpawnModal();
+
+  spawnError.value = null;
+  spawnSubmitting.value = true;
+  try {
+    if (mode === "existing") {
+      await api.spawnSession({
+        mode: "existing",
+        task: promptText.value,
+        model: memberModel.value,
+        effort: memberEffort.value,
+        teamId: targetTeamId.value,
+      });
+    } else {
+      const body = mode === "new"
+        ? (() => {
+          const coordination = !spawnLeadPlans.value ? "classic" : (spawnAutonomousLead.value ? "autonomous" : "sequenced");
+          // In lead-plans mode only the lead's row (index 0) is meaningful —
+          // the rest of the team is determined by the lead, not typed in here.
+          const members = coordination === "classic" ? draftMembers.value : draftMembers.value.slice(0, 1);
+          return {
+            mode: "new",
+            teamName: teamName.value,
+            goal: promptText.value,
+            dir: spawnDir.value,
+            baseRef: spawnBaseRef.value,
+            createNew: spawnCreateNew.value,
+            useWorktree: !spawnNoWorktree.value,
+            coordination,
+            mcpConfigIds: spawnMcpConfigIds.value,
+            members,
+          };
+        })()
+        : {
+          mode: "solo",
+          task: promptText.value,
+          model: memberModel.value,
+          effort: memberEffort.value,
+          dir: spawnDir.value,
+          baseRef: spawnBaseRef.value,
+          createNew: spawnCreateNew.value,
+          useWorktree: !spawnNoWorktree.value,
+          mcpConfigIds: spawnMcpConfigIds.value,
+        };
+
+      if (spawnScheduleEnabled.value) {
+        const label = mode === "new" ? `Team: ${teamName.value.trim()}` : `Session: ${promptText.value.trim().slice(0, 60)}`;
+        const scheduledAt = new Date(spawnScheduleAt.value);
+        const recurrence = spawnRecurrenceMode.value === "interval"
+          ? { kind: "interval", unit: spawnRecurrenceUnit.value, every: spawnRecurrenceEvery.value }
+          : spawnRecurrenceMode.value === "weekly"
+          ? {
+            kind: "weekly",
+            daysOfWeek: spawnRecurrenceDays.value,
+            hour: scheduledAt.getHours(),
+            minute: scheduledAt.getMinutes(),
+          }
+          : null;
+        await api.createSchedule({
+          label,
+          runAt: scheduledAt.getTime(),
+          payload: { kind: "spawn", body },
+          recurrence,
+        });
+      } else {
+        await api.spawnSession(body);
+      }
+    }
+    if (mode !== "existing") rememberRecentDir(spawnDir.value);
+    // Only a successful spawn resets the form and closes the modal — a
+    // failed request keeps everything as typed so the user can fix and retry.
+    resetSpawnFields(mode);
+    closeSpawnModal();
+  } catch (err) {
+    spawnError.value = errMsg(err);
+  } finally {
+    spawnSubmitting.value = false;
+  }
 }
 
 // KEY=VALUE per line — good enough for the small env/header sets a personal
@@ -536,6 +887,10 @@ function parseKeyValueLines(text: string): Record<string, string> {
   return out;
 }
 
+function serializeKeyValueLines(record: Record<string, string>): string {
+  return Object.entries(record).map(([k, v]) => `${k}=${v}`).join("\n");
+}
+
 function resetMcpForm(): void {
   mcpFormName.value = "";
   mcpFormTransport.value = "stdio";
@@ -544,6 +899,7 @@ function resetMcpForm(): void {
   mcpFormEnvText.value = "";
   mcpFormUrl.value = "";
   mcpFormHeadersText.value = "";
+  mcpEditingId.value = null;
 }
 
 export function openMcpModal(): void {
@@ -553,6 +909,23 @@ export function openMcpModal(): void {
 
 export function closeMcpModal(): void {
   mcpModalOpen.value = false;
+}
+
+// Pre-fills the form from an existing config so editing doesn't mean
+// delete-and-retype-everything.
+export function startEditMcpConfig(config: McpConfig): void {
+  mcpEditingId.value = config.id;
+  mcpFormName.value = config.name;
+  mcpFormTransport.value = config.transport;
+  mcpFormCommand.value = config.command;
+  mcpFormArgsText.value = config.args.join(" ");
+  mcpFormEnvText.value = serializeKeyValueLines(config.env);
+  mcpFormUrl.value = config.url;
+  mcpFormHeadersText.value = serializeKeyValueLines(config.headers);
+}
+
+export function cancelEditMcpConfig(): void {
+  resetMcpForm();
 }
 
 export function setMcpFormName(value: string): void {
@@ -584,9 +957,9 @@ export function setMcpFormHeadersText(value: string): void {
 }
 
 export async function submitMcpConfig(): Promise<void> {
-  if (!mcpFormName.value.trim()) return;
+  if (mcpFormError.value) return;
 
-  await api.addMcpConfig({
+  const body = {
     name: mcpFormName.value,
     transport: mcpFormTransport.value,
     command: mcpFormCommand.value,
@@ -594,11 +967,99 @@ export async function submitMcpConfig(): Promise<void> {
     env: parseKeyValueLines(mcpFormEnvText.value),
     url: mcpFormUrl.value,
     headers: parseKeyValueLines(mcpFormHeadersText.value),
-  });
-  resetMcpForm();
+  };
+
+  const editingId = mcpEditingId.value;
+  try {
+    if (editingId) {
+      await api.updateMcpConfig(editingId, body);
+    } else {
+      await api.addMcpConfig(body);
+    }
+    resetMcpForm();
+  } catch (err) {
+    showErrorToast(editingId ? "Couldn't update MCP server" : "Couldn't add MCP server", err);
+  }
 }
 
-export function deleteMcpConfig(id: string): Promise<void> {
+export function askDeleteMcpConfig(id: string): void {
+  mcpDeleteConfirm.value = id;
+}
+
+export function cancelDeleteMcpConfig(): void {
+  mcpDeleteConfirm.value = null;
+}
+
+export async function confirmDeleteMcpConfig(id: string): Promise<void> {
+  mcpDeleteConfirm.value = null;
   spawnMcpConfigIds.value = spawnMcpConfigIds.value.filter((c) => c !== id);
-  return api.deleteMcpConfig(id);
+  try {
+    await api.deleteMcpConfig(id);
+  } catch (err) {
+    showErrorToast("Couldn't delete MCP server", err);
+  }
+}
+
+function resetScheduleMsgForm(): void {
+  scheduleMsgSessionId.value = sessions.value.find((s) => s.status !== "done" && s.status !== "stopped")?.id ?? null;
+  scheduleMsgText.value = "";
+  scheduleMsgAt.value = "";
+  scheduleError.value = null;
+}
+
+export function openScheduledModal(): void {
+  resetScheduleMsgForm();
+  scheduledModalOpen.value = true;
+}
+
+export function closeScheduledModal(): void {
+  scheduledModalOpen.value = false;
+  scheduleDeleteConfirm.value = null;
+}
+
+export function setScheduleMsgSessionId(id: string | null): void {
+  scheduleMsgSessionId.value = id;
+}
+
+export function setScheduleMsgText(value: string): void {
+  scheduleMsgText.value = value;
+}
+
+export function setScheduleMsgAt(value: string): void {
+  scheduleMsgAt.value = value;
+}
+
+export async function submitScheduleMessage(): Promise<void> {
+  if (scheduleMsgValidationError.value) return;
+  const sessionId = scheduleMsgSessionId.value!;
+  const session = sessionsById.value.get(sessionId);
+  const text = scheduleMsgText.value.trim();
+  scheduleError.value = null;
+  try {
+    await api.createSchedule({
+      label: `Message to ${session?.name ?? sessionId}: ${text.slice(0, 60)}`,
+      runAt: new Date(scheduleMsgAt.value).getTime(),
+      payload: { kind: "message", sessionId, text },
+    });
+    resetScheduleMsgForm();
+  } catch (err) {
+    scheduleError.value = errMsg(err);
+  }
+}
+
+export function askDeleteSchedule(id: string): void {
+  scheduleDeleteConfirm.value = id;
+}
+
+export function cancelDeleteSchedule(): void {
+  scheduleDeleteConfirm.value = null;
+}
+
+export async function confirmDeleteSchedule(id: string): Promise<void> {
+  scheduleDeleteConfirm.value = null;
+  try {
+    await api.deleteSchedule(id);
+  } catch (err) {
+    showErrorToast("Couldn't delete schedule", err);
+  }
 }

@@ -1,4 +1,4 @@
-import { grants, grantsOpen, sessionsById } from "../store.ts";
+import { grants, grantsOpen, now, sessionsById } from "../store.ts";
 import { closeGrantsPopover, revokeGrant } from "../actions.ts";
 import { relativeTime } from "../format.ts";
 
@@ -68,7 +68,7 @@ export function GrantsPopover() {
                   {grant.pattern}
                 </div>
                 <div style={{ fontSize: 10.5, color: "var(--sb-text-5)", paddingTop: 2 }}>
-                  {session?.short ?? grant.sid} · granted {relativeTime(grant.grantedAt)}
+                  {session?.short ?? grant.sid} · granted {relativeTime(grant.grantedAt, now.value)}
                 </div>
               </div>
               <button

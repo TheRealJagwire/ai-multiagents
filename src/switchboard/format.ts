@@ -1,7 +1,11 @@
-import type { Effort, Model, SessionPhase, SessionStatus } from "./types.ts";
+import type { Effort, Model, Recurrence, SessionPhase, SessionStatus } from "./types.ts";
 
-export function relativeTime(ts: number): string {
-  const diffMs = Date.now() - ts;
+// nowMs defaults to Date.now() for callers that don't care about live
+// ticking; components that want the string to update on its own pass
+// store.ts's `now` signal's value explicitly so the JSX read is what
+// triggers the re-render.
+export function relativeTime(ts: number, nowMs: number = Date.now()): string {
+  const diffMs = nowMs - ts;
   const minutes = Math.round(diffMs / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
@@ -57,8 +61,8 @@ export function phaseLabel(phase: SessionPhase): string {
   return phaseLabels[phase];
 }
 
-export function elapsed(startedAt: number): string {
-  const minutes = Math.floor((Date.now() - startedAt) / 60_000);
+export function elapsed(startedAt: number, nowMs: number = Date.now()): string {
+  const minutes = Math.floor((nowMs - startedAt) / 60_000);
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
@@ -69,6 +73,45 @@ export function costPhrase(from: Model, to: Model): string {
   const ratio = modelRate[to] / modelRate[from];
   if (ratio > 1) return ` · ≈${ratio % 1 ? ratio.toFixed(1) : ratio}× step cost`;
   return ` · ≈${Math.round((1 - ratio) * 100)}% cheaper per step`;
+}
+
+// Same shape as relativeTime but for a timestamp that may be in the future
+// (a pending schedule) rather than always in the past.
+export function formatWhen(ts: number, nowMs: number = Date.now()): string {
+  const diffMs = ts - nowMs;
+  if (diffMs <= 0) return relativeTime(ts, nowMs);
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 1) return "in <1m";
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  const days = Math.round(hours / 24);
+  return `in ${days}d`;
+}
+
+export function formatLocalDateTime(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export function formatRecurrence(recurrence: Recurrence | null): string | null {
+  if (!recurrence) return null;
+  if (recurrence.kind === "interval") {
+    const unit = recurrence.every === 1 ? recurrence.unit.slice(0, -1) : recurrence.unit;
+    return `every ${recurrence.every} ${unit}`;
+  }
+  const days = [...recurrence.daysOfWeek].sort().map((d) => DAY_NAMES[d]).join(", ");
+  const time = new Date(0, 0, 1, recurrence.hour, recurrence.minute).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `weekly on ${days} at ${time}`;
 }
 
 export type ChipState = "current" | "pending" | "idle";

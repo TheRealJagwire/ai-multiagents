@@ -1,15 +1,15 @@
 import type { ComponentChildren } from "preact";
 import type { EventKind, FeedEvent } from "../types.ts";
-import { sessionsById } from "../store.ts";
+import { now, sessionsById } from "../store.ts";
 import { applyAltFix, approveArtifact, approveEvent, denyEvent, openReview, openSession, retryEvent } from "../actions.ts";
 import { relativeTime } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { FactChips } from "./FactChips.tsx";
 
 const accents: Partial<Record<EventKind, { edge: string; border: string }>> = {
-  approval: { edge: "#d98324", border: "#ecd9b8" },
-  error: { edge: "#c4432b", border: "#ecc7bd" },
-  review: { edge: "#2a6fdb", border: "#dbe5f5" },
+  approval: { edge: "var(--sb-waiting-dot)", border: "var(--sb-amber-tint-3)" },
+  error: { edge: "var(--sb-error-dot)", border: "var(--sb-red-tint-3)" },
+  review: { edge: "var(--sb-blue)", border: "var(--sb-blue-tint)" },
 };
 
 interface PinnedCardProps {
@@ -48,7 +48,7 @@ export function PinnedCard({ event, focused }: PinnedCardProps) {
         <span style={{ fontSize: 12.5, fontWeight: 600 }}>{session?.name ?? event.sid}</span>
         <span style={{ fontSize: 11.5, color: "var(--sb-text-5)" }}>{event.verb}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--sb-text-6)" }}>{relativeTime(event.ts)}</span>
+        <span style={{ fontSize: 11, color: "var(--sb-text-6)" }}>{relativeTime(event.ts, now.value)}</span>
       </div>
 
       {event.why && (
@@ -72,9 +72,15 @@ export function PinnedCard({ event, focused }: PinnedCardProps) {
         </div>
       )}
 
+      {event.kind === "approval" && session?.worktreePath && (
+        <div className="sb-mono" style={{ fontSize: 10.5, color: "var(--sb-text-5)" }}>
+          in {session.worktreePath}
+        </div>
+      )}
+
       <FactChips verified={event.chipsV} claimed={event.chipsC} />
 
-      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
         {event.kind === "approval" && (
           <>
             <PinnedButton primary onClick={() => approveEvent(event.id, "once")}>
@@ -84,6 +90,11 @@ export function PinnedCard({ event, focused }: PinnedCardProps) {
               Allow this pattern for session
             </PinnedButton>
             <PinnedButton onClick={() => denyEvent(event.id)}>Deny</PinnedButton>
+            {event.grantPattern && (
+              <span className="sb-mono" style={{ fontSize: 10.5, color: "var(--sb-text-5)" }}>
+                pattern: {event.grantPattern}
+              </span>
+            )}
           </>
         )}
         {event.kind === "error" && (
@@ -126,7 +137,7 @@ function PinnedButton(
         borderRadius: 7,
         cursor: onClick ? "pointer" : "not-allowed",
         background: primary ? "var(--sb-primary)" : "transparent",
-        color: primary ? "#fff" : muted ? "var(--sb-text-3)" : "var(--sb-text-1)",
+        color: primary ? "var(--sb-on-primary)" : muted ? "var(--sb-text-3)" : "var(--sb-text-1)",
         border: primary ? "none" : "1px solid var(--sb-border-3)",
       }}
     >

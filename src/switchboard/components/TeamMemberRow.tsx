@@ -12,6 +12,7 @@ import {
   makeLead,
   openMoveConfirm,
   openSession,
+  queueModelChange,
   queueMove,
   toggleManageExpanded,
 } from "../actions.ts";
@@ -30,7 +31,7 @@ export function chipStyle(state: ChipState): JSX.CSSProperties {
     borderRadius: 9,
     cursor: "pointer",
   };
-  if (state === "current") return { ...base, background: "var(--sb-primary)", color: "#fff", border: "1px solid var(--sb-primary)" };
+  if (state === "current") return { ...base, background: "var(--sb-primary)", color: "var(--sb-on-primary)", border: "1px solid var(--sb-primary)" };
   if (state === "pending") {
     return { ...base, background: "var(--sb-waiting-bg)", color: "var(--sb-waiting-text)", border: "1px solid var(--sb-waiting-dot)" };
   }
@@ -51,6 +52,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
   const mc = moveConfirm.value;
   const mcActive = expanded && mc?.sid === session.id;
   const deleteConfirmActive = expanded && deleteSessionConfirm.value === session.id;
+  const disableModelChange = session.status === "done" || session.status === "stopped";
 
   const pendingNotes: { text: string; cancel: () => void }[] = [];
   if (session.pendingModel) {
@@ -102,6 +104,14 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
     <div>
       <div
         onClick={() => openSession(session.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openSession(session.id);
+          }
+        }}
+        role="button"
+        tabIndex={0}
         style={{
           display: "flex",
           alignItems: "center",
@@ -140,11 +150,13 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
         )}
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--sb-text-5)" }}>{session.statusLine}</span>
-        <span
+        <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             toggleManageExpanded(session.id);
           }}
+          aria-label={expanded ? "Collapse session controls" : "Expand session controls"}
           style={{
             fontSize: 15,
             fontWeight: 700,
@@ -155,7 +167,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
           }}
         >
           ⋯
-        </span>
+        </button>
       </div>
 
       {expanded && (
@@ -175,29 +187,39 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <span
-                style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
+                style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
               >
                 MODEL
               </span>
               {MODELS.map((m) => (
-                <span
+                <button
+                  type="button"
                   key={m}
-                  style={{ ...chipStyle(chipState(session.model === m, false)), cursor: "not-allowed" }}
+                  disabled={disableModelChange}
+                  onClick={disableModelChange ? undefined : () => queueModelChange(session.id, m)}
+                  style={{
+                    ...chipStyle(chipState(session.model === m, session.pendingModel === m)),
+                    cursor: disableModelChange ? "not-allowed" : "pointer",
+                    opacity: disableModelChange ? 0.5 : 1,
+                  }}
                 >
                   {modelLabel(m)}
-                </span>
+                </button>
               ))}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 5 }}
+              title="Effort can't change mid-session — only model can"
+            >
               <span
-                style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
+                style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
               >
                 EFFORT
               </span>
               {EFFORTS.map((e) => (
                 <span
                   key={e}
-                  style={{ ...chipStyle(chipState(session.effort === e, false)), cursor: "not-allowed" }}
+                  style={{ ...chipStyle(chipState(session.effort === e, false)), cursor: "not-allowed", opacity: 0.5 }}
                 >
                   {effortLabel(e)}
                 </span>
@@ -220,9 +242,9 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                   }}
                 >
                   <span>⏳ {note.text}</span>
-                  <span onClick={note.cancel} style={{ cursor: "pointer", textDecoration: "underline" }}>
+                  <button type="button" onClick={note.cancel} style={{ cursor: "pointer", textDecoration: "underline" }}>
                     cancel
-                  </span>
+                  </button>
                 </div>
               ))}
             </div>
@@ -244,15 +266,18 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
               >
                 <div style={{ fontSize: 12, fontWeight: 700 }}>Delete this session?</div>
                 <div style={{ fontSize: 11.5, lineHeight: 1.5, color: "var(--sb-text-2)" }}>
-                  Terminates it and removes it from every list. Its worktree is removed but the branch is kept.
+                  {session.useWorktree
+                    ? "Terminates it and removes it from every list. Its worktree is removed but the branch is kept."
+                    : "Terminates it and removes it from every list."}
                 </div>
                 <div style={{ display: "flex", gap: 8, paddingTop: 3 }}>
-                  <span
+                  <button
+                    type="button"
                     onClick={() => confirmDeleteSession(session.id)}
                     style={{
                       padding: "5px 14px",
                       background: "var(--sb-error-dot)",
-                      color: "#fff",
+                      color: "var(--sb-on-primary)",
                       borderRadius: 7,
                       fontSize: 11.5,
                       fontWeight: 600,
@@ -260,8 +285,9 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     Confirm delete
-                  </span>
-                  <span
+                  </button>
+                  <button
+                    type="button"
                     onClick={cancelDeleteSession}
                     style={{
                       padding: "5px 14px",
@@ -275,7 +301,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     Cancel
-                  </span>
+                  </button>
                 </div>
               </div>
             )
@@ -308,12 +334,13 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                   </div>
                 ))}
                 <div style={{ display: "flex", gap: 8, paddingTop: 3 }}>
-                  <span
+                  <button
+                    type="button"
                     onClick={() => queueMove(session.id, mc!.target)}
                     style={{
                       padding: "5px 14px",
                       background: "var(--sb-primary)",
-                      color: "#fff",
+                      color: "var(--sb-on-primary)",
                       borderRadius: 7,
                       fontSize: 11.5,
                       fontWeight: 600,
@@ -321,8 +348,9 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     Move at next step
-                  </span>
-                  <span
+                  </button>
+                  <button
+                    type="button"
                     onClick={cancelMoveConfirm}
                     style={{
                       padding: "5px 14px",
@@ -336,19 +364,20 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     Cancel
-                  </span>
+                  </button>
                 </div>
               </div>
             )
             : (
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <span
-                  style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
+                  style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
                 >
                   MOVE
                 </span>
                 {otherTeams.map((t) => (
-                  <span
+                  <button
+                    type="button"
                     key={t.id}
                     onClick={() => openMoveConfirm(session.id, t.id)}
                     style={{
@@ -363,10 +392,11 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     → {t.name}
-                  </span>
+                  </button>
                 ))}
                 {session.teamId && (
-                  <span
+                  <button
+                    type="button"
                     onClick={() => openMoveConfirm(session.id, null)}
                     style={{
                       fontSize: 11,
@@ -380,10 +410,11 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     → Independent
-                  </span>
+                  </button>
                 )}
                 {showRole && !session.lead && (
-                  <span
+                  <button
+                    type="button"
                     onClick={() => makeLead(session.id)}
                     style={{
                       fontSize: 11,
@@ -397,10 +428,11 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                     }}
                   >
                     Make lead
-                  </span>
+                  </button>
                 )}
                 <span style={{ flex: 1 }} />
-                <span
+                <button
+                  type="button"
                   onClick={() => askDeleteSession(session.id)}
                   style={{
                     fontSize: 11,
@@ -413,7 +445,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
                   }}
                 >
                   Delete
-                </span>
+                </button>
               </div>
             )}
 

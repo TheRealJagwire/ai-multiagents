@@ -12,7 +12,7 @@ async function runGit(args: string[], cwd?: string): Promise<string> {
   return new TextDecoder().decode(stdout).trim();
 }
 
-export async function assertGitRepo(dir: string): Promise<void> {
+async function assertDirStat(dir: string): Promise<void> {
   if (!dir || !dir.startsWith("/")) {
     throw new Error(`directory must be an absolute path: "${dir}"`);
   }
@@ -23,7 +23,17 @@ export async function assertGitRepo(dir: string): Promise<void> {
     throw new Error(`directory does not exist: ${dir}`);
   }
   if (!stat.isDirectory) throw new Error(`not a directory: ${dir}`);
+}
 
+// Used by the "skip git" spawn path, where a session runs directly in `dir`
+// with no worktree — the directory still has to exist, it just doesn't have
+// to be a git repo.
+export async function assertDirExists(dir: string): Promise<void> {
+  await assertDirStat(dir);
+}
+
+export async function assertGitRepo(dir: string): Promise<void> {
+  await assertDirStat(dir);
   const inside = await runGit(["-C", dir, "rev-parse", "--is-inside-work-tree"], dir).catch(() => "");
   if (inside !== "true") throw new Error(`not a git repository: ${dir}`);
 }

@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
-import { activeFilter, feedWindowSize, filteredStream, lastSeen, sessionFilter } from "../store.ts";
-import { expandFeedWindow } from "../actions.ts";
+import { activeFilter, feedWindowSize, filteredStream, lastSeen, sessionFilter, sessions } from "../store.ts";
+import { expandFeedWindow, openSpawnModal } from "../actions.ts";
 import { PinnedBlock } from "./PinnedBlock.tsx";
 import { ActivityHeader } from "./ActivityHeader.tsx";
 import { WhileAwayDigest } from "./WhileAwayDigest.tsx";
@@ -36,7 +36,48 @@ export function FeedView() {
       <ActivityHeader />
       <WhileAwayDigest />
 
-      {stream.length === 0 && (
+      {stream.length === 0 && sessions.value.length === 0 && (
+        <div style={{ textAlign: "center", padding: "56px 0" }}>
+          <div style={{ fontSize: 13.5, color: "var(--sb-text-3)", marginBottom: 16 }}>
+            Nothing's running yet. Spawn a session or a team to get started.
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <button
+              type="button"
+              onClick={() => openSpawnModal("solo")}
+              style={{
+                padding: "7px 16px",
+                background: "var(--sb-primary)",
+                color: "var(--sb-on-primary)",
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              + New session
+            </button>
+            <button
+              type="button"
+              onClick={() => openSpawnModal("new")}
+              style={{
+                padding: "7px 16px",
+                border: "1px solid var(--sb-border-3)",
+                background: "var(--sb-surface)",
+                color: "var(--sb-text-3)",
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              + New team
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stream.length === 0 && sessions.value.length > 0 && (
         <div style={{ textAlign: "center", fontSize: 13, color: "var(--sb-text-5)", padding: "40px 0" }}>
           Nothing here — you're all caught up.
         </div>

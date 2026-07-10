@@ -1,4 +1,4 @@
-import type { EventResolution, FeedEvent, Grant, McpConfig, Session, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
+import type { EventResolution, FeedEvent, Grant, McpConfig, Schedule, Session, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
 import { findEvent, findSession, nextId, state } from "./state.ts";
 import { publish } from "./bus.ts";
 
@@ -66,4 +66,9 @@ export function pushSessionRemove(id: string): void {
 export function pushMcpConfigsReplace(configs: McpConfig[]): void {
   state.mcpConfigs = configs;
   publish("mcp-configs-replaced", configs);
+}
+
+export function pushSchedulesReplace(schedules: Schedule[]): void {
+  state.schedules = schedules;
+  publish("schedules-replaced", schedules);
 }

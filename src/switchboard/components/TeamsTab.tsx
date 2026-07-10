@@ -1,4 +1,4 @@
-import { deleteTeamConfirm, railGroups, startWorkersConfirm, teams } from "../store.ts";
+import { deleteTeamConfirm, now, railGroups, startWorkersConfirm, teams } from "../store.ts";
 import {
   askDeleteTeam,
   askStartWorkers,
@@ -21,7 +21,8 @@ export function TeamsTab() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, maxWidth: 640, minWidth: 420 }}>
         <div style={{ fontSize: 15, fontWeight: 700 }}>Teams</div>
         <div style={{ flex: 1 }} />
-        <div
+        <button
+          type="button"
           onClick={() => openSpawnModal("new")}
           style={{
             padding: "6px 14px",
@@ -35,7 +36,7 @@ export function TeamsTab() {
           }}
         >
           + New team
-        </div>
+        </button>
       </div>
 
       {teams.value.map((team) => {
@@ -60,7 +61,7 @@ export function TeamsTab() {
               {team.coordination !== "classic" && (
                 <span
                   style={{
-                    fontSize: 9.5,
+                    fontSize: 10.5,
                     fontWeight: 700,
                     letterSpacing: ".05em",
                     color: "var(--sb-text-4)",
@@ -73,30 +74,33 @@ export function TeamsTab() {
                 </span>
               )}
               <span style={{ fontSize: 11, color: "var(--sb-text-5)" }}>
-                {members.length} {members.length === 1 ? "agent" : "agents"} · started {elapsed(team.startedAt)} ago
+                {members.length} {members.length === 1 ? "agent" : "agents"} · started {elapsed(team.startedAt, now.value)} ago
               </span>
               <span style={{ flex: 1 }} />
               {team.coordination === "sequenced" && !team.workersStarted && startWorkersConfirm.value !== team.id && (
-                <span
+                <button
+                  type="button"
                   onClick={() => askStartWorkers(team.id)}
                   style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer" }}
                 >
                   Start workers
-                </span>
+                </button>
               )}
-              <span
+              <button
+                type="button"
                 onClick={() => openSpawnModal("existing", team.id)}
                 style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer" }}
               >
                 + Add member
-              </span>
+              </button>
               {deleteTeamConfirm.value !== team.id && (
-                <span
+                <button
+                  type="button"
                   onClick={() => askDeleteTeam(team.id)}
                   style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sb-error-text)", cursor: "pointer" }}
                 >
                   Delete team
-                </span>
+                </button>
               )}
             </div>
             {startWorkersConfirm.value === team.id && (
@@ -117,12 +121,13 @@ export function TeamsTab() {
                   Start workers from the lead's plan? This reads {`SWITCHBOARD_TASKS.md`} from its worktree and
                   spawns one session per task.
                 </span>
-                <span
+                <button
+                  type="button"
                   onClick={() => confirmStartWorkers(team.id)}
                   style={{
                     padding: "5px 14px",
                     background: "var(--sb-primary)",
-                    color: "#fff",
+                    color: "var(--sb-on-primary)",
                     borderRadius: 7,
                     fontSize: 11.5,
                     fontWeight: 600,
@@ -130,8 +135,9 @@ export function TeamsTab() {
                   }}
                 >
                   Start workers
-                </span>
-                <span
+                </button>
+                <button
+                  type="button"
                   onClick={cancelStartWorkers}
                   style={{
                     padding: "5px 14px",
@@ -145,7 +151,7 @@ export function TeamsTab() {
                   }}
                 >
                   Cancel
-                </span>
+                </button>
               </div>
             )}
             {deleteTeamConfirm.value === team.id && (
@@ -164,14 +170,16 @@ export function TeamsTab() {
               >
                 <span style={{ fontSize: 11.5, color: "var(--sb-text-2)", flex: 1 }}>
                   Delete "{team.name}"? Terminates and removes all {members.length}{" "}
-                  {members.length === 1 ? "session" : "sessions"} — worktrees removed, branches kept.
+                  {members.length === 1 ? "session" : "sessions"}
+                  {team.useWorktree ? " — worktrees removed, branches kept." : "."}
                 </span>
-                <span
+                <button
+                  type="button"
                   onClick={() => confirmDeleteTeam(team.id)}
                   style={{
                     padding: "5px 14px",
                     background: "var(--sb-error-dot)",
-                    color: "#fff",
+                    color: "var(--sb-on-primary)",
                     borderRadius: 7,
                     fontSize: 11.5,
                     fontWeight: 600,
@@ -179,8 +187,9 @@ export function TeamsTab() {
                   }}
                 >
                   Confirm delete
-                </span>
-                <span
+                </button>
+                <button
+                  type="button"
                   onClick={cancelDeleteTeam}
                   style={{
                     padding: "5px 14px",
@@ -194,7 +203,7 @@ export function TeamsTab() {
                   }}
                 >
                   Cancel
-                </span>
+                </button>
               </div>
             )}
             <div style={{ fontSize: 12, color: "var(--sb-text-3)", marginBottom: 6 }}>{team.goal}</div>

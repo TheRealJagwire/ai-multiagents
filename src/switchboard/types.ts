@@ -47,6 +47,7 @@ export interface Session {
   dir: string;
   worktreePath: string | null;
   branch: string | null;
+  useWorktree: boolean;
   mcpConfigIds: string[];
 }
 
@@ -103,6 +104,7 @@ export interface Team {
   mcpConfigIds: string[];
   coordination: TeamCoordination;
   workersStarted: boolean;
+  useWorktree: boolean;
 }
 
 export type McpTransport = "stdio" | "http" | "sse";
@@ -125,6 +127,65 @@ export interface Grant {
   grantedAt: number;
 }
 
+export type ScheduleStatus = "pending" | "fired" | "failed";
+
+// A spawn payload carries the exact body shape POST /sessions accepts for
+// mode "new" or "solo" — the scheduler fires it through the same
+// spawnFromBody() parsing the live route uses, so there's one source of
+// truth for what a valid spawn body looks like.
+export interface ScheduleSpawnPayload {
+  kind: "spawn";
+  body: Record<string, unknown>;
+}
+
+export interface ScheduleMessagePayload {
+  kind: "message";
+  sessionId: string;
+  // Snapshot of the session's name at schedule time, so the list (and any
+  // "no longer running" error) still reads sensibly if the session is later
+  // renamed or deleted.
+  sessionLabel: string;
+  text: string;
+}
+
+export type SchedulePayload = ScheduleSpawnPayload | ScheduleMessagePayload;
+
+// Recurrence only applies to spawn-kind schedules — a recurring message
+// needs a target session that outlives every occurrence, which doesn't fit
+// how sessions actually work (they finish/get deleted), so "message"
+// schedules stay one-shot.
+export type RecurrenceUnit = "minutes" | "hours" | "days";
+
+export interface IntervalRecurrence {
+  kind: "interval";
+  unit: RecurrenceUnit;
+  every: number; // fire every N `unit`s
+}
+
+export interface WeeklyRecurrence {
+  kind: "weekly";
+  daysOfWeek: number[]; // 0=Sun..6=Sat, local time, at least one
+  hour: number; // 0-23, local
+  minute: number; // 0-59, local
+}
+
+export type Recurrence = IntervalRecurrence | WeeklyRecurrence;
+
+export interface Schedule {
+  id: string;
+  label: string;
+  runAt: number;
+  createdAt: number;
+  status: ScheduleStatus;
+  error?: string;
+  payload: SchedulePayload;
+  recurrence: Recurrence | null;
+  // How many times this has fired — recurring schedules stay "pending" and
+  // reuse the same id/row across occurrences rather than spawning a new
+  // Schedule each time, so this is the only record of how many times it's run.
+  occurrenceCount: number;
+}
+
 export type TranscriptMessageKind = "note" | "text" | "tool" | "user" | "perm" | "summary";
 
 export interface TranscriptMessage {
@@ -140,4 +201,5 @@ export interface Snapshot {
   grants: Grant[];
   transcripts: Record<string, TranscriptMessage[]>;
   mcpConfigs: McpConfig[];
+  schedules: Schedule[];
 }

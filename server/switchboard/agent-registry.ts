@@ -8,8 +8,12 @@ export interface AgentSessionHandle {
   query: Query;
   pushMessage: (text: string) => void;
   dir: string;
+  // The process's cwd — a real worktree checkout, or `dir` itself when the
+  // session opted out of git/worktrees (see `branch`).
   worktreePath: string;
-  branch: string;
+  // null means this session opted out of git/worktrees entirely — cwd is
+  // `dir` directly, and there's no worktree/branch for cleanup to remove.
+  branch: string | null;
   sessionAllowAll: boolean;
 }
 

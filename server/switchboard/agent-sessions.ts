@@ -143,8 +143,10 @@ class MessageQueue implements AsyncIterable<SDKUserMessage> {
 
 export interface SpawnOptions {
   dir: string;
+  // The process's cwd — a real worktree checkout, or `dir` itself when
+  // `branch` is null (git/worktrees skipped for this session).
   worktreePath: string;
-  branch: string;
+  branch: string | null;
   model: Model;
   effort: Effort;
   mcpConfigIds: string[];

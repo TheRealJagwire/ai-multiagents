@@ -19,7 +19,7 @@ export function ActivityHeader() {
         <span
           style={{
             background: "var(--sb-waiting-dot)",
-            color: "#fff",
+            color: "var(--sb-on-primary)",
             fontSize: 10.5,
             fontWeight: 700,
             borderRadius: 10,
@@ -47,12 +47,14 @@ export function ActivityHeader() {
       />
 
       {filteredSession && (
-        <span
+        <button
+          type="button"
           onClick={() => setSessionFilter(null)}
+          aria-label={`Clear filter: ${filteredSession.short}`}
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: "#fff",
+            color: "var(--sb-on-primary)",
             background: "var(--sb-blue)",
             borderRadius: "var(--sb-radius-pill)",
             padding: "4px 10px",
@@ -60,12 +62,13 @@ export function ActivityHeader() {
           }}
         >
           {filteredSession.short} ✕
-        </span>
+        </button>
       )}
 
       <div style={{ display: "flex", gap: 6 }}>
         {filters.map((f) => (
-          <span
+          <button
+            type="button"
             key={f.id}
             onClick={() => setFilter(f.id)}
             style={{
@@ -75,23 +78,24 @@ export function ActivityHeader() {
               borderRadius: 8,
               cursor: "pointer",
               background: activeFilter.value === f.id ? "var(--sb-primary)" : "transparent",
-              color: activeFilter.value === f.id ? "#fff" : "var(--sb-text-3)",
+              color: activeFilter.value === f.id ? "var(--sb-on-primary)" : "var(--sb-text-3)",
               border: activeFilter.value === f.id ? "none" : "1px solid var(--sb-border-3)",
             }}
           >
             {f.label}
             {f.id === "unread" && unreadCount.value > 0 ? ` · ${unreadCount.value}` : ""}
-          </span>
+          </button>
         ))}
       </div>
 
       {unreadCount.value > 0 && (
-        <span
+        <button
+          type="button"
           onClick={markCaughtUp}
           style={{ fontSize: 11.5, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer" }}
         >
           Mark caught up
-        </span>
+        </button>
       )}
     </div>
   );

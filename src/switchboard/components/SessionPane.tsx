@@ -1,16 +1,18 @@
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Effort, EventResolution, Model } from "../types.ts";
 import {
-  chatText,
+  chatDrafts,
   confirmStop,
   deleteSessionConfirm,
   eventsById,
   grants,
+  now,
   selectedSession,
   selectedTranscript,
   sessionsById,
   teams,
 } from "../store.ts";
+import { useAutoGrow } from "../hooks.ts";
 import {
   approveEvent,
   askDeleteSession,
@@ -23,6 +25,7 @@ import {
   confirmDeleteSession,
   confirmStopSession,
   denyEvent,
+  queueModelChange,
   sendMessage,
   setChatText,
   togglePause,
@@ -31,6 +34,49 @@ import {
 import { chipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, phaseLabel, statusLabel } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
+import { Markdown } from "./Markdown.tsx";
+
+const TOOL_MESSAGE_PREVIEW_LINES = 4;
+
+function ToolMessage({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split("\n");
+  const isLong = lines.length > TOOL_MESSAGE_PREVIEW_LINES;
+  const shown = expanded || !isLong ? text : lines.slice(0, TOOL_MESSAGE_PREVIEW_LINES).join("\n");
+
+  return (
+    <div
+      className="sb-mono"
+      style={{
+        fontSize: 11,
+        background: "var(--sb-surface-2)",
+        border: "1px solid var(--sb-border-2)",
+        borderRadius: 8,
+        padding: "8px 11px",
+        color: "var(--sb-text-4)",
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {shown}
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            display: "block",
+            cursor: "pointer",
+            color: "var(--sb-blue)",
+            fontFamily: "var(--sb-font-sans)",
+            fontSize: 10.5,
+            marginTop: 5,
+          }}
+        >
+          {expanded ? "Show less" : `Show ${lines.length - TOOL_MESSAGE_PREVIEW_LINES} more lines`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 const MODELS: Model[] = ["haiku", "sonnet", "opus"];
 const EFFORTS: Effort[] = ["low", "medium", "high"];
@@ -47,14 +93,49 @@ export function SessionPane() {
   const session = selectedSession.value;
   const transcript = selectedTranscript.value;
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
+  const [hasNewBelow, setHasNewBelow] = useState(false);
+  const draft = chatDrafts.value[session?.id ?? ""] ?? "";
+  const chatRef = useAutoGrow(draft, 130);
 
-  // Keeps the transcript pinned to the newest message as updates stream in
-  // (new text, tool calls, the end-of-turn summary) instead of leaving the
-  // scroll position wherever it happened to be.
+  // Switching sessions always jumps to the latest message and re-arms
+  // auto-scroll; while a session stays open, a scroll listener tracks
+  // whether the user is still near the bottom.
   useEffect(() => {
     const el = transcriptRef.current;
+    if (!el) return;
+    pinnedToBottomRef.current = true;
+    setHasNewBelow(false);
+    el.scrollTop = el.scrollHeight;
+
+    const handleScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      pinnedToBottomRef.current = nearBottom;
+      if (nearBottom) setHasNewBelow(false);
+    };
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [session?.id]);
+
+  // New messages only pull the view down if the user was already reading
+  // the bottom of the transcript — otherwise scrolling up to read history
+  // would get yanked back down on every streamed line.
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    if (pinnedToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      setHasNewBelow(true);
+    }
+  }, [transcript.length]);
+
+  function jumpToBottom(): void {
+    const el = transcriptRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [session?.id, transcript.length]);
+    pinnedToBottomRef.current = true;
+    setHasNewBelow(false);
+  }
 
   if (!session) return null;
 
@@ -121,14 +202,16 @@ export function SessionPane() {
           <span>{session.status === "done" ? "finished" : `${session.ctx}% context`}</span>
           <span>{formatCost(session.cost)}</span>
           {sessionGrantCount > 0 && (
-            <span onClick={toggleGrantsPopover} style={{ textDecoration: "underline", cursor: "pointer" }}>
+            <button type="button" onClick={toggleGrantsPopover} style={{ textDecoration: "underline", cursor: "pointer" }}>
               Grants · {sessionGrantCount}
-            </span>
+            </button>
           )}
         </div>
 
         <div className="sb-mono" style={{ fontSize: 10.5, color: "var(--sb-text-5)" }}>
-          {session.worktreePath
+          {!session.useWorktree
+            ? `Running in: ${session.dir} (no worktree)`
+            : session.worktreePath
             ? `Worktree: ${session.worktreePath} · Branch: ${session.branch}`
             : "Creating worktree…"}
         </div>
@@ -136,29 +219,36 @@ export function SessionPane() {
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span
-              style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
+              style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
             >
               MODEL
             </span>
             {MODELS.map((m) => (
-              <span
+              <button
+                type="button"
                 key={m}
-                style={{ ...chipStyle(chipState(session.model === m, false)), cursor: "not-allowed" }}
+                disabled={disablePause}
+                onClick={disablePause ? undefined : () => queueModelChange(session.id, m)}
+                style={{
+                  ...chipStyle(chipState(session.model === m, session.pendingModel === m)),
+                  cursor: disablePause ? "not-allowed" : "pointer",
+                  opacity: disablePause ? 0.5 : 1,
+                }}
               >
                 {modelLabel(m)}
-              </span>
+              </button>
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }} title="Effort can't change mid-session — only model can">
             <span
-              style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
+              style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}
             >
               EFFORT
             </span>
             {EFFORTS.map((e) => (
               <span
                 key={e}
-                style={{ ...chipStyle(chipState(session.effort === e, false)), cursor: "not-allowed" }}
+                style={{ ...chipStyle(chipState(session.effort === e, false)), cursor: "not-allowed", opacity: 0.5 }}
               >
                 {effortLabel(e)}
               </span>
@@ -176,12 +266,13 @@ export function SessionPane() {
                   ⏳ {modelLabel(session.model)} → {modelLabel(session.pendingModel)} at next step
                   {costPhrase(session.model, session.pendingModel)}
                 </span>
-                <span
+                <button
+                  type="button"
                   onClick={() => cancelPendingModel(session.id)}
                   style={{ cursor: "pointer", textDecoration: "underline" }}
                 >
                   cancel
-                </span>
+                </button>
               </div>
             )}
             {session.pendingEffort && (
@@ -192,34 +283,22 @@ export function SessionPane() {
                   ⏳ effort {session.effort} → {session.pendingEffort} at next step ·{" "}
                   {effortRank[session.pendingEffort] > effortRank[session.effort] ? "more" : "less"} thinking budget
                 </span>
-                <span
+                <button
+                  type="button"
                   onClick={() => cancelPendingEffort(session.id)}
                   style={{ cursor: "pointer", textDecoration: "underline" }}
                 >
                   cancel
-                </span>
+                </button>
               </div>
             )}
           </div>
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ display: "flex", gap: 3, flex: 1, maxWidth: 150 }}>
-            {Array.from({ length: session.msTotal }).map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1,
-                  height: 4,
-                  borderRadius: 2,
-                  background: i < session.msDone ? colors.dot : "var(--sb-surface-3)",
-                }}
-              />
-            ))}
-          </div>
           <span className="sb-mono" style={{ fontSize: 11, color: "var(--sb-text-4)" }}>
-            {phaseLabel(session.phase)} · {session.msDone}/{session.msTotal}
-            {session.status !== "done" && ` · ${elapsed(session.startedAt)}`}
+            {phaseLabel(session.phase)}
+            {session.status !== "done" && ` · ${elapsed(session.startedAt, now.value)}`}
           </span>
         </div>
 
@@ -256,21 +335,6 @@ export function SessionPane() {
           >
             {session.status === "paused" ? "Resume" : "Pause"}
           </button>
-          <button
-            type="button"
-            disabled
-            style={{
-              padding: "5px 13px",
-              border: "1px solid var(--sb-border-3)",
-              borderRadius: 7,
-              fontSize: 11.5,
-              fontWeight: 600,
-              cursor: "not-allowed",
-              color: "var(--sb-text-3)",
-            }}
-          >
-            Hand off
-          </button>
           <span style={{ flex: 1 }} />
           {confirmStop.value
             ? (
@@ -284,7 +348,7 @@ export function SessionPane() {
                   style={{
                     padding: "5px 13px",
                     background: "var(--sb-error-dot)",
-                    color: "#fff",
+                    color: "var(--sb-on-primary)",
                     borderRadius: 7,
                     fontSize: 11.5,
                     fontWeight: 600,
@@ -314,7 +378,7 @@ export function SessionPane() {
             ? (
               <>
                 <span style={{ fontSize: 11.5, color: "var(--sb-text-4)", alignSelf: "center" }}>
-                  Delete this session? Worktree removed, branch kept.
+                  {session.useWorktree ? "Delete this session? Worktree removed, branch kept." : "Delete this session?"}
                 </span>
                 <button
                   type="button"
@@ -322,7 +386,7 @@ export function SessionPane() {
                   style={{
                     padding: "5px 13px",
                     background: "var(--sb-error-dot)",
-                    color: "#fff",
+                    color: "var(--sb-on-primary)",
                     borderRadius: 7,
                     fontSize: 11.5,
                     fontWeight: 600,
@@ -385,10 +449,11 @@ export function SessionPane() {
         </div>
       </div>
 
+      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
       <div
         ref={transcriptRef}
         style={{
-          flex: 1,
+          height: "100%",
           overflowY: "auto",
           padding: "16px 20px",
           display: "flex",
@@ -420,8 +485,8 @@ export function SessionPane() {
           }
           if (message.k === "text") {
             return (
-              <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--sb-text-2)" }}>
-                {message.text}
+              <div key={i} style={{ fontSize: 12.5, color: "var(--sb-text-2)" }}>
+                <Markdown text={message.text ?? ""} />
               </div>
             );
           }
@@ -431,7 +496,6 @@ export function SessionPane() {
                 key={i}
                 style={{
                   fontSize: 12,
-                  lineHeight: 1.5,
                   color: "var(--sb-text-1)",
                   background: "var(--sb-running-bg)",
                   border: "1px solid var(--sb-running-dot)",
@@ -441,7 +505,7 @@ export function SessionPane() {
               >
                 <div
                   style={{
-                    fontSize: 9.5,
+                    fontSize: 10.5,
                     fontWeight: 700,
                     letterSpacing: ".07em",
                     color: "var(--sb-running-text)",
@@ -450,7 +514,7 @@ export function SessionPane() {
                 >
                   SUMMARY
                 </div>
-                {message.text}
+                <Markdown text={message.text ?? ""} />
               </div>
             );
           }
@@ -473,22 +537,7 @@ export function SessionPane() {
             );
           }
           if (message.k === "tool") {
-            return (
-              <div
-                key={i}
-                className="sb-mono"
-                style={{
-                  fontSize: 11,
-                  background: "var(--sb-surface-2)",
-                  border: "1px solid var(--sb-border-2)",
-                  borderRadius: 8,
-                  padding: "8px 11px",
-                  color: "var(--sb-text-4)",
-                }}
-              >
-                {message.text}
-              </div>
-            );
+            return <ToolMessage key={i} text={message.text ?? ""} />;
           }
           // perm
           const event = message.eventId ? eventsById.value.get(message.eventId) : undefined;
@@ -504,19 +553,24 @@ export function SessionPane() {
               }}
             >
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Permission needed</div>
-              <div className="sb-mono" style={{ fontSize: 11.5, color: "var(--sb-text-2)", marginBottom: 10 }}>
+              <div className="sb-mono" style={{ fontSize: 11.5, color: "var(--sb-text-2)", marginBottom: 6 }}>
                 {event.command}
               </div>
+              {session.worktreePath && (
+                <div className="sb-mono" style={{ fontSize: 10.5, color: "var(--sb-text-5)", marginBottom: 10 }}>
+                  in {session.worktreePath}
+                </div>
+              )}
               {event.resolved === null
                 ? (
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <button
                       type="button"
                       onClick={() => approveEvent(event.id, "once")}
                       style={{
                         padding: "6px 16px",
                         background: "var(--sb-primary)",
-                        color: "#fff",
+                        color: "var(--sb-on-primary)",
                         borderRadius: 7,
                         fontSize: 12,
                         fontWeight: 600,
@@ -524,6 +578,21 @@ export function SessionPane() {
                       }}
                     >
                       Approve once
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => approveEvent(event.id, "session")}
+                      style={{
+                        padding: "6px 16px",
+                        border: "1px solid var(--sb-border-3)",
+                        borderRadius: 7,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--sb-text-2)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Allow for session
                     </button>
                     <button
                       type="button"
@@ -540,6 +609,11 @@ export function SessionPane() {
                     >
                       Deny
                     </button>
+                    {event.grantPattern && (
+                      <span className="sb-mono" style={{ fontSize: 10.5, color: "var(--sb-text-5)" }}>
+                        pattern: {event.grantPattern}
+                      </span>
+                    )}
                   </div>
                 )
                 : (
@@ -550,6 +624,29 @@ export function SessionPane() {
             </div>
           );
         })}
+      </div>
+      {hasNewBelow && (
+        <button
+          type="button"
+          onClick={jumpToBottom}
+          style={{
+            position: "absolute",
+            bottom: 14,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "6px 14px",
+            background: "var(--sb-primary)",
+            color: "var(--sb-on-primary)",
+            borderRadius: 20,
+            fontSize: 11.5,
+            fontWeight: 600,
+            boxShadow: "var(--sb-shadow-card)",
+            cursor: "pointer",
+          }}
+        >
+          ↓ New messages
+        </button>
+      )}
       </div>
 
       <div
@@ -563,16 +660,18 @@ export function SessionPane() {
           background: "var(--sb-surface)",
         }}
       >
-        <input
-          placeholder={`Message ${session.short || session.name}…`}
-          value={chatText.value}
-          onInput={(e) => setChatText((e.target as HTMLInputElement).value)}
+        <textarea
+          ref={chatRef}
+          placeholder={`Message ${session.short || session.name}… (Shift+Enter for a new line)`}
+          value={draft}
+          onInput={(e) => setChatText(session.id, (e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && chatText.value.trim()) {
-              sendMessage(session.id, chatText.value.trim());
-              chatText.value = "";
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage(session.id, draft);
             }
           }}
+          rows={1}
           style={{
             flex: 1,
             border: "1px solid var(--sb-border-3)",
@@ -582,20 +681,17 @@ export function SessionPane() {
             fontFamily: "var(--sb-font-sans)",
             outline: "none",
             color: "var(--sb-text-1)",
+            resize: "none",
+            overflowY: "auto",
           }}
         />
         <button
           type="button"
-          onClick={() => {
-            if (chatText.value.trim()) {
-              sendMessage(session.id, chatText.value.trim());
-              chatText.value = "";
-            }
-          }}
+          onClick={() => sendMessage(session.id, draft)}
           style={{
             padding: "9px 16px",
             background: "var(--sb-primary)",
-            color: "#fff",
+            color: "var(--sb-on-primary)",
             borderRadius: 9,
             fontSize: 12.5,
             fontWeight: 600,

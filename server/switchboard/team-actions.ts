@@ -2,6 +2,7 @@ import type { Effort, Model } from "../../src/switchboard/types.ts";
 import { findSession, state } from "./state.ts";
 import { pushFeedEvent, pushSessionPatch, pushTeamsReplace } from "./mutations.ts";
 import { deleteSession } from "./session-actions.ts";
+import { getAgentSession } from "./agent-registry.ts";
 
 const STEP_BOUNDARY_MS = 8000;
 
@@ -25,19 +26,52 @@ function setTimer(sid: string, kind: string, fn: () => void): void {
   timers.set(timerKey(sid, kind), setTimeout(fn, STEP_BOUNDARY_MS));
 }
 
-// Real Managed Agents sessions have no "change the model of a running
-// session" API — only agent-level versioning (affects future sessions) or a
-// session-create-time override. Faking a mid-session queue/apply here would
-// display a model that isn't what's actually running, so this is dropped
-// entirely rather than simulated — same treatment as the "Hand off" button.
-// deno-lint-ignore no-unused-vars
-export function queueModelChange(sid: string, model: Model): void {}
+// The Claude Agent SDK's live Query exposes setModel() — unlike Managed
+// Agents, a running session's model really can change mid-flight. Queue the
+// change and apply it at the next step boundary (same UX/timer pattern as
+// queueMove below) rather than switching immediately, so an in-flight turn
+// finishes on the model it started with.
+export function queueModelChange(sid: string, model: Model): void {
+  const session = findSession(sid);
+  if (session.status === "done" || session.status === "stopped") return;
+  if (session.model === model) return;
+
+  pushSessionPatch(sid, { pendingModel: model });
+  pushFeedEvent({ sid, kind: "info", own: true, verb: `model change queued: → ${model} at the next step boundary` });
+  setTimer(sid, "model", () => executeModelChange(sid));
+}
 
 export function cancelPendingModel(sid: string): void {
   clearTimer(sid, "model");
   pushSessionPatch(sid, { pendingModel: null });
 }
 
+function executeModelChange(sid: string): void {
+  const session = findSession(sid);
+  const model = session.pendingModel;
+  if (!model) return;
+  clearTimer(sid, "model");
+
+  const handle = getAgentSession(sid);
+  if (!handle) {
+    pushSessionPatch(sid, { pendingModel: null });
+    return;
+  }
+
+  handle.query.setModel(model)
+    .then(() => {
+      pushSessionPatch(sid, { model, pendingModel: null });
+      pushFeedEvent({ sid, kind: "info", own: false, verb: `model changed to ${model} at step boundary` });
+    })
+    .catch((err) => {
+      pushSessionPatch(sid, { pendingModel: null });
+      pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to change model: ${String(err)}` });
+    });
+}
+
+// Effort has no equivalent live-update method on the SDK's Query — only
+// model does. Keep this a no-op (frontend disables the effort chips and
+// explains why) rather than displaying a queued change that can never apply.
 // deno-lint-ignore no-unused-vars
 export function queueEffortChange(sid: string, effort: Effort): void {}
 

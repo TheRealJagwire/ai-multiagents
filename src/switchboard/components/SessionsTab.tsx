@@ -1,4 +1,4 @@
-import { sessions } from "../store.ts";
+import { now, sessions } from "../store.ts";
 import { openSession } from "../actions.ts";
 import { elapsed, formatCost, modelEffortLabel, phaseLabel, statusLabel } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
@@ -11,7 +11,8 @@ export function SessionsTab() {
         {sessions.value.map((session) => {
           const colors = statusColor(session.status);
           return (
-            <div
+            <button
+              type="button"
               key={session.id}
               onClick={() => openSession(session.id)}
               className="sb-sbin"
@@ -25,6 +26,8 @@ export function SessionsTab() {
                 gap: 9,
                 cursor: "pointer",
                 boxShadow: "var(--sb-shadow-card)",
+                width: "100%",
+                textAlign: "left",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -47,19 +50,6 @@ export function SessionsTab() {
               <div style={{ fontSize: 12, color: "var(--sb-text-3)", lineHeight: 1.4, minHeight: 34 }}>
                 {session.statusLine}
               </div>
-              <div style={{ display: "flex", gap: 3 }}>
-                {Array.from({ length: session.msTotal }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      flex: 1,
-                      height: 4,
-                      borderRadius: 2,
-                      background: i < session.msDone ? colors.dot : "var(--sb-surface-3)",
-                    }}
-                  />
-                ))}
-              </div>
               <div
                 className="sb-mono"
                 style={{
@@ -71,13 +61,12 @@ export function SessionsTab() {
                 }}
               >
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {modelEffortLabel(session.model, session.effort)} · {phaseLabel(session.phase)} ·{" "}
-                  {session.msDone}/{session.msTotal}
-                  {session.status !== "done" && ` · ${elapsed(session.startedAt)}`}
+                  {modelEffortLabel(session.model, session.effort)} · {phaseLabel(session.phase)}
+                  {session.status !== "done" && ` · ${elapsed(session.startedAt, now.value)}`}
                 </span>
                 <span style={{ flex: "none" }}>{formatCost(session.cost)}</span>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>

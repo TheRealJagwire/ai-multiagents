@@ -3,6 +3,7 @@ import { nextId, state } from "./state.ts";
 import { pushFeedEvent, pushSessionAdd, pushSessionPatch, pushTeamsReplace, pushTranscriptMessage } from "./mutations.ts";
 import { spawnAgentSession, type SpawnWorkerResult } from "./agent-sessions.ts";
 import {
+  assertDirExists,
   assertGitRepo,
   assertRefExists,
   branchName,
@@ -15,6 +16,7 @@ import {
   worktreeSlug,
 } from "./git-worktree.ts";
 import { parseSpecFile } from "./team-spec.ts";
+import { parseCoordination, parseEffort, parseModel, parseStringArray } from "./parse-body.ts";
 import { join } from "jsr:@std/path";
 
 function startWorktreeAndSession(
@@ -25,13 +27,30 @@ function startWorktreeAndSession(
   model: Model,
   effort: Effort,
   mcpConfigIds: string[],
+  useWorktree: boolean,
   onSpawnWorker?: (task: string) => Promise<SpawnWorkerResult>,
 ): void {
   const short = shortFrom(task);
-  const branch = branchName(short, sid);
-  const worktreePath = join(worktreesBaseDir(dir), worktreeSlug(short, sid));
 
   (async () => {
+    if (!useWorktree) {
+      await assertDirExists(dir);
+      pushSessionPatch(sid, { statusLine: "Starting up…" });
+      await spawnAgentSession(sid, task, {
+        dir,
+        worktreePath: dir,
+        branch: null,
+        model,
+        effort,
+        mcpConfigIds,
+        onSpawnWorker,
+      });
+      return;
+    }
+
+    const branch = branchName(short, sid);
+    const worktreePath = join(worktreesBaseDir(dir), worktreeSlug(short, sid));
+
     await assertGitRepo(dir);
     await assertRefExists(dir, baseRef);
 
@@ -67,6 +86,7 @@ function makeSession(
     rolePrefix: string;
     dir: string;
     mcpConfigIds: string[];
+    useWorktree: boolean;
   },
 ): Session {
   const short = shortFrom(task);
@@ -94,6 +114,7 @@ function makeSession(
     dir: opts.dir,
     worktreePath: null,
     branch: null,
+    useWorktree: opts.useWorktree,
     mcpConfigIds: opts.mcpConfigIds,
   };
 }
@@ -106,6 +127,7 @@ export function spawnSolo(
   baseRef: string,
   createNew: boolean,
   mcpConfigIds: string[],
+  useWorktree: boolean,
 ): void {
   const trimmedTask = task.trim() || "New task";
   const session = makeSession(nextId("s"), trimmedTask, {
@@ -116,6 +138,7 @@ export function spawnSolo(
     rolePrefix: "",
     dir,
     mcpConfigIds,
+    useWorktree,
   });
   const displayName = trimmedTask.length > 26 ? `${trimmedTask.slice(0, 24)}…` : trimmedTask;
   session.name = displayName;
@@ -125,17 +148,19 @@ export function spawnSolo(
   pushTranscriptMessage(session.id, { k: "note", text: `Task from you: ${trimmedTask}` });
   pushFeedEvent({ sid: session.id, kind: "info", own: true, verb: "spawned as independent session" });
 
-  if (createNew) {
+  // "Create new repo" only makes sense alongside a worktree — skipping git
+  // entirely takes precedence, so createNew is ignored when useWorktree is off.
+  if (createNew && useWorktree) {
     pushSessionPatch(session.id, { statusLine: "Creating repository…" });
     createNewRepo(dir)
-      .then(() => startWorktreeAndSession(session.id, dir, "HEAD", trimmedTask, model, effort, mcpConfigIds))
+      .then(() => startWorktreeAndSession(session.id, dir, "HEAD", trimmedTask, model, effort, mcpConfigIds, true))
       .catch((err) => {
         pushSessionPatch(session.id, { status: "error", statusLine: "Failed to start", phase: "blocked" });
         pushFeedEvent({ sid: session.id, kind: "error", own: false, verb: `failed to create repository: ${String(err)}` });
       });
     return;
   }
-  startWorktreeAndSession(session.id, dir, baseRef, trimmedTask, model, effort, mcpConfigIds);
+  startWorktreeAndSession(session.id, dir, baseRef, trimmedTask, model, effort, mcpConfigIds, useWorktree);
 }
 
 export function spawnIntoTeam(
@@ -155,6 +180,7 @@ export function spawnIntoTeam(
     rolePrefix: "Worker · ",
     dir: team?.dir ?? "",
     mcpConfigIds: team?.mcpConfigIds ?? [],
+    useWorktree: team?.useWorktree ?? true,
   });
 
   pushSessionAdd(session);
@@ -179,6 +205,7 @@ export function spawnIntoTeam(
     model,
     effort,
     team.mcpConfigIds,
+    team.useWorktree,
   );
 }
 
@@ -227,6 +254,7 @@ export function spawnTeam(
   coordination: TeamCoordination,
   mcpConfigIds: string[],
   members: { task: string; model: Model; effort: Effort }[],
+  useWorktree: boolean,
 ): void {
   const trimmedName = name.trim() || "New team";
   const trimmedGoal = goal.trim() || "No goal set yet.";
@@ -238,9 +266,13 @@ export function spawnTeam(
       { task: "", model: "sonnet" as Model, effort: "medium" as Effort },
     ];
 
+  // Sequenced/autonomous both spawn workers onto branches off the lead's
+  // branch, so they require a worktree — without one, force classic.
+  const effectiveCoordination = useWorktree ? coordination : "classic";
+
   // Sequenced/autonomous teams only ever spawn the lead at creation time —
   // any additional rows the client sent are ignored.
-  const activeRows = coordination === "classic" ? rows : rows.slice(0, 1);
+  const activeRows = effectiveCoordination === "classic" ? rows : rows.slice(0, 1);
 
   const tasks = activeRows.map((row, i) => row.task.trim() || (i === 0 ? "Coordinate the work" : `Task ${i + 1}`));
   const sessions: Session[] = activeRows.map((row, i) =>
@@ -252,10 +284,14 @@ export function spawnTeam(
       rolePrefix: i === 0 ? "Lead · " : "Worker · ",
       dir,
       mcpConfigIds,
+      useWorktree,
     })
   );
 
-  const effectiveBaseRef = createNew ? "HEAD" : baseRef;
+  // "Create new repo" only makes sense alongside a worktree — skipping git
+  // entirely takes precedence, so createNew is ignored when useWorktree is off.
+  const effectiveCreateNew = createNew && useWorktree;
+  const effectiveBaseRef = effectiveCreateNew ? "HEAD" : baseRef;
   pushTeamsReplace([
     ...state.teams,
     {
@@ -266,8 +302,9 @@ export function spawnTeam(
       baseRef: effectiveBaseRef,
       startedAt: Date.now(),
       mcpConfigIds,
-      coordination,
+      coordination: effectiveCoordination,
       workersStarted: false,
+      useWorktree,
     },
   ]);
   for (const session of sessions) pushSessionAdd(session);
@@ -279,7 +316,7 @@ export function spawnTeam(
     );
   });
 
-  const onSpawnWorker = coordination === "autonomous" ? makeSpawnWorkerCallback(teamId) : undefined;
+  const onSpawnWorker = effectiveCoordination === "autonomous" ? makeSpawnWorkerCallback(teamId) : undefined;
 
   // All members share one directory, so the repo (when created fresh) is
   // created exactly once, before any member's worktree — running each
@@ -289,8 +326,8 @@ export function spawnTeam(
       let task = i === 0
         ? `Team goal: ${trimmedGoal}. Your task: ${tasks[i]}`
         : `You're part of a team pursuing this goal: ${trimmedGoal}. Your task: ${tasks[i]}`;
-      if (i === 0 && coordination === "sequenced") task += SEQUENCED_LEAD_SUFFIX;
-      if (i === 0 && coordination === "autonomous") task += AUTONOMOUS_LEAD_SUFFIX;
+      if (i === 0 && effectiveCoordination === "sequenced") task += SEQUENCED_LEAD_SUFFIX;
+      if (i === 0 && effectiveCoordination === "autonomous") task += AUTONOMOUS_LEAD_SUFFIX;
       startWorktreeAndSession(
         session.id,
         dir,
@@ -299,12 +336,13 @@ export function spawnTeam(
         session.model,
         session.effort,
         mcpConfigIds,
+        useWorktree,
         i === 0 ? onSpawnWorker : undefined,
       );
     });
   };
 
-  if (createNew) {
+  if (effectiveCreateNew) {
     for (const session of sessions) pushSessionPatch(session.id, { statusLine: "Creating repository…" });
     createNewRepo(dir).then(launchMembers).catch((err) => {
       for (const session of sessions) {
@@ -320,10 +358,50 @@ export function spawnTeam(
     sid: sessions[0].id,
     kind: "info",
     own: true,
-    verb: coordination === "classic"
+    verb: effectiveCoordination === "classic"
       ? `team "${trimmedName}" spawned by you — ${sessions.length} agents`
-      : `team "${trimmedName}" spawned by you — lead only (${coordination})`,
+      : `team "${trimmedName}" spawned by you — lead only (${effectiveCoordination})`,
   });
+}
+
+// Parses and routes a POST /sessions-shaped body to spawnSolo/spawnTeam —
+// shared by the live route handler and the scheduler (schedule-actions.ts),
+// so a scheduled spawn goes through the exact same validation as spawning
+// right now. "existing" mode (add member to a team) isn't schedulable and
+// is handled separately by the route, since it doesn't fit this shape.
+export function spawnFromBody(body: Record<string, unknown>): void {
+  if (body.mode === "new") {
+    const teamName = typeof body.teamName === "string" ? body.teamName : "";
+    const goal = typeof body.goal === "string" ? body.goal : "";
+    const dir = typeof body.dir === "string" ? body.dir.trim() : "";
+    const baseRef = typeof body.baseRef === "string" && body.baseRef.trim() ? body.baseRef.trim() : "HEAD";
+    const createNew = body.createNew === true;
+    const useWorktree = body.useWorktree !== false;
+    const coordination = parseCoordination(body.coordination);
+    const mcpConfigIds = parseStringArray(body.mcpConfigIds);
+    const members = Array.isArray(body.members)
+      ? body.members.map((m) => {
+        const member = m as Record<string, unknown>;
+        return {
+          task: typeof member.task === "string" ? member.task : "",
+          model: parseModel(member.model),
+          effort: parseEffort(member.effort),
+        };
+      })
+      : [];
+    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members, useWorktree);
+    return;
+  }
+
+  const task = typeof body.task === "string" ? body.task : "";
+  const model = parseModel(body.model);
+  const effort = parseEffort(body.effort);
+  const dir = typeof body.dir === "string" ? body.dir.trim() : "";
+  const baseRef = typeof body.baseRef === "string" && body.baseRef.trim() ? body.baseRef.trim() : "HEAD";
+  const createNew = body.createNew === true;
+  const useWorktree = body.useWorktree !== false;
+  const mcpConfigIds = parseStringArray(body.mcpConfigIds);
+  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds, useWorktree);
 }
 
 // Sequenced mode: reads the lead's SWITCHBOARD_TASKS.md and spawns one

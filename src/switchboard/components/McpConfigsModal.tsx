@@ -1,9 +1,12 @@
 import type { McpTransport } from "../types.ts";
 import {
   mcpConfigs,
+  mcpDeleteConfirm,
+  mcpEditingId,
   mcpFormArgsText,
   mcpFormCommand,
   mcpFormEnvText,
+  mcpFormError,
   mcpFormHeadersText,
   mcpFormName,
   mcpFormTransport,
@@ -11,8 +14,11 @@ import {
   mcpModalOpen,
 } from "../store.ts";
 import {
+  askDeleteMcpConfig,
+  cancelDeleteMcpConfig,
+  cancelEditMcpConfig,
   closeMcpModal,
-  deleteMcpConfig,
+  confirmDeleteMcpConfig,
   setMcpFormArgsText,
   setMcpFormCommand,
   setMcpFormEnvText,
@@ -20,6 +26,7 @@ import {
   setMcpFormName,
   setMcpFormTransport,
   setMcpFormUrl,
+  startEditMcpConfig,
   submitMcpConfig,
 } from "../actions.ts";
 import { chipState } from "../format.ts";
@@ -51,7 +58,7 @@ export function McpConfigsModal() {
       style={{
         position: "absolute",
         inset: 0,
-        background: "rgba(28,27,24,.28)",
+        background: "var(--sb-overlay)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -110,7 +117,7 @@ export function McpConfigsModal() {
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{config.name}</span>
                     <span
                       style={{
-                        fontSize: 9.5,
+                        fontSize: 10.5,
                         fontWeight: 700,
                         letterSpacing: ".05em",
                         color: "var(--sb-text-4)",
@@ -136,22 +143,75 @@ export function McpConfigsModal() {
                     {config.transport === "stdio" ? `${config.command} ${config.args.join(" ")}`.trim() : config.url}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => deleteMcpConfig(config.id)}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: "var(--sb-error-text)",
-                    border: "1px solid var(--sb-red-tint-4)",
-                    padding: "4px 11px",
-                    borderRadius: 7,
-                    cursor: "pointer",
-                    flex: "none",
-                  }}
-                >
-                  Delete
-                </button>
+                {mcpDeleteConfirm.value === config.id
+                  ? (
+                    <div style={{ display: "flex", gap: 6, flex: "none" }}>
+                      <button
+                        type="button"
+                        onClick={() => confirmDeleteMcpConfig(config.id)}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--sb-on-primary)",
+                          background: "var(--sb-error-dot)",
+                          padding: "4px 11px",
+                          borderRadius: 7,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelDeleteMcpConfig}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--sb-text-3)",
+                          border: "1px solid var(--sb-border-3)",
+                          padding: "4px 11px",
+                          borderRadius: 7,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )
+                  : (
+                    <div style={{ display: "flex", gap: 6, flex: "none" }}>
+                      <button
+                        type="button"
+                        onClick={() => startEditMcpConfig(config)}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--sb-text-3)",
+                          border: "1px solid var(--sb-border-3)",
+                          padding: "4px 11px",
+                          borderRadius: 7,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => askDeleteMcpConfig(config.id)}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--sb-error-text)",
+                          border: "1px solid var(--sb-red-tint-4)",
+                          padding: "4px 11px",
+                          borderRadius: 7,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
               </div>
             ))}
         </div>
@@ -167,7 +227,18 @@ export function McpConfigsModal() {
             background: "var(--sb-bg)",
           }}
         >
-          <div style={{ fontSize: 12.5, fontWeight: 700 }}>Add a server</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700 }}>{mcpEditingId.value ? "Edit server" : "Add a server"}</div>
+            {mcpEditingId.value && (
+              <button
+                type="button"
+                onClick={cancelEditMcpConfig}
+                style={{ fontSize: 11, color: "var(--sb-blue)", cursor: "pointer" }}
+              >
+                Cancel edit
+              </button>
+            )}
+          </div>
 
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2 }}>
@@ -183,9 +254,14 @@ export function McpConfigsModal() {
               <div style={labelStyle}>Transport</div>
               <div style={{ display: "flex", gap: 5 }}>
                 {TRANSPORTS.map((t) => (
-                  <span key={t} onClick={() => setMcpFormTransport(t)} style={chipStyle(chipState(transport === t, false))}>
+                  <button
+                    type="button"
+                    key={t}
+                    onClick={() => setMcpFormTransport(t)}
+                    style={chipStyle(chipState(transport === t, false))}
+                  >
                     {t}
-                  </span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -246,23 +322,27 @@ export function McpConfigsModal() {
               </>
             )}
 
-          <button
-            type="button"
-            onClick={submitMcpConfig}
-            disabled={!mcpFormName.value.trim()}
-            style={{
-              alignSelf: "flex-start",
-              padding: "7px 16px",
-              background: mcpFormName.value.trim() ? "var(--sb-primary)" : "var(--sb-surface-3)",
-              color: mcpFormName.value.trim() ? "#fff" : "var(--sb-text-5)",
-              borderRadius: 8,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: mcpFormName.value.trim() ? "pointer" : "not-allowed",
-            }}
-          >
-            + Add server
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={submitMcpConfig}
+              disabled={!!mcpFormError.value}
+              style={{
+                padding: "7px 16px",
+                background: mcpFormError.value ? "var(--sb-surface-3)" : "var(--sb-primary)",
+                color: mcpFormError.value ? "var(--sb-text-5)" : "var(--sb-on-primary)",
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: mcpFormError.value ? "not-allowed" : "pointer",
+              }}
+            >
+              {mcpEditingId.value ? "Save changes" : "+ Add server"}
+            </button>
+            {mcpFormError.value && (
+              <span style={{ fontSize: 11, color: "var(--sb-text-5)" }}>{mcpFormError.value}</span>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { Hono } from "jsr:@hono/hono";
 import { streamSSE } from "jsr:@hono/hono/streaming";
-import type { Effort, McpTransport, Model, Snapshot, TeamCoordination } from "../../src/switchboard/types.ts";
+import type { Effort, Model, Recurrence, RecurrenceUnit, Snapshot } from "../../src/switchboard/types.ts";
 import { state } from "./state.ts";
 import { subscribe } from "./bus.ts";
 import { applyAltFix, approveEvent, denyEvent, retryEvent } from "./resolutions.ts";
@@ -17,49 +17,23 @@ import {
 } from "./team-actions.ts";
 import { approveArtifact, requestChanges } from "./review-actions.ts";
 import { revokeGrant } from "./grant-actions.ts";
-import { spawnIntoTeam, spawnSolo, spawnTeam, startWorkers } from "./spawn-actions.ts";
-import { addMcpConfig, deleteMcpConfig } from "./mcp-actions.ts";
+import { spawnFromBody, spawnIntoTeam, startWorkers } from "./spawn-actions.ts";
+import { addMcpConfig, deleteMcpConfig, updateMcpConfig } from "./mcp-actions.ts";
+import { createSchedule, deleteSchedule, startScheduler } from "./schedule-actions.ts";
+import { listDirectories } from "./dir-listing.ts";
 import { undoAction } from "./undo.ts";
-
-const MODELS: Model[] = ["haiku", "sonnet", "opus"];
-const EFFORTS: Effort[] = ["low", "medium", "high"];
-const MCP_TRANSPORTS: McpTransport[] = ["stdio", "http", "sse"];
-const TEAM_COORDINATIONS: TeamCoordination[] = ["classic", "sequenced", "autonomous"];
-
-function parseModel(value: unknown): Model {
-  return MODELS.includes(value as Model) ? (value as Model) : "sonnet";
-}
-
-function parseEffort(value: unknown): Effort {
-  return EFFORTS.includes(value as Effort) ? (value as Effort) : "medium";
-}
-
-function parseTransport(value: unknown): McpTransport {
-  return MCP_TRANSPORTS.includes(value as McpTransport) ? (value as McpTransport) : "stdio";
-}
-
-function parseCoordination(value: unknown): TeamCoordination {
-  return TEAM_COORDINATIONS.includes(value as TeamCoordination) ? (value as TeamCoordination) : "classic";
-}
-
-function parseStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-function parseStringRecord(value: unknown): Record<string, string> {
-  if (typeof value !== "object" || value === null) return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof v === "string") out[k] = v;
-  }
-  return out;
-}
+import { EFFORTS, MODELS, parseEffort, parseModel, parseStringArray, parseStringRecord, parseTransport } from "./parse-body.ts";
 
 // No seed data and no simulator — every session in state now originates from
 // a real spawn (POST /sessions), backed by a live Claude Agent SDK process.
 export const switchboardApp = new Hono();
 
 switchboardApp.get("/snapshot", (c) => c.json<Snapshot>(state));
+
+switchboardApp.get("/dirs", async (c) => {
+  const prefix = c.req.query("prefix") ?? "";
+  return c.json(await listDirectories(prefix));
+});
 
 switchboardApp.get("/events", (c) =>
   streamSSE(c, async (stream) => {
@@ -76,6 +50,37 @@ async function readJsonBody(req: Request): Promise<Record<string, unknown>> {
   } catch {
     return {};
   }
+}
+
+const RECURRENCE_UNITS: RecurrenceUnit[] = ["minutes", "hours", "days"];
+
+// Returns null for both "no recurrence" (value is null/undefined) and "bad
+// recurrence" — the caller distinguishes those by checking whether the raw
+// value was nullish before treating a null result as a validation error.
+function parseRecurrence(value: unknown): Recurrence | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+
+  if (v.kind === "interval") {
+    if (!RECURRENCE_UNITS.includes(v.unit as RecurrenceUnit)) return null;
+    const every = typeof v.every === "number" ? Math.floor(v.every) : NaN;
+    if (!Number.isFinite(every) || every < 1) return null;
+    return { kind: "interval", unit: v.unit as RecurrenceUnit, every };
+  }
+
+  if (v.kind === "weekly") {
+    const daysOfWeek = Array.isArray(v.daysOfWeek)
+      ? v.daysOfWeek.filter((d): d is number => typeof d === "number" && d >= 0 && d <= 6)
+      : [];
+    if (daysOfWeek.length === 0) return null;
+    const hour = typeof v.hour === "number" ? v.hour : NaN;
+    const minute = typeof v.minute === "number" ? v.minute : NaN;
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+    return { kind: "weekly", daysOfWeek, hour, minute };
+  }
+
+  return null;
 }
 
 switchboardApp.post("/events/:id/approve", async (c) => {
@@ -195,42 +200,52 @@ switchboardApp.post("/grants/:id/revoke", (c) => {
 switchboardApp.post("/sessions", async (c) => {
   const body = await readJsonBody(c.req.raw);
 
-  if (body.mode === "new") {
-    const teamName = typeof body.teamName === "string" ? body.teamName : "";
-    const goal = typeof body.goal === "string" ? body.goal : "";
-    const dir = typeof body.dir === "string" ? body.dir.trim() : "";
-    const baseRef = typeof body.baseRef === "string" && body.baseRef.trim() ? body.baseRef.trim() : "HEAD";
-    const createNew = body.createNew === true;
-    const coordination = parseCoordination(body.coordination);
-    const mcpConfigIds = parseStringArray(body.mcpConfigIds);
-    const members = Array.isArray(body.members)
-      ? body.members.map((m) => {
-        const member = m as Record<string, unknown>;
-        return {
-          task: typeof member.task === "string" ? member.task : "",
-          model: parseModel(member.model),
-          effort: parseEffort(member.effort),
-        };
-      })
-      : [];
-    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members);
-    return c.body(null, 204);
-  }
-
-  const task = typeof body.task === "string" ? body.task : "";
-  const model = parseModel(body.model);
-  const effort = parseEffort(body.effort);
-
   if (body.mode === "existing" && typeof body.teamId === "string") {
-    spawnIntoTeam(task, body.teamId, model, effort);
+    const task = typeof body.task === "string" ? body.task : "";
+    spawnIntoTeam(task, body.teamId, parseModel(body.model), parseEffort(body.effort));
     return c.body(null, 204);
   }
 
-  const dir = typeof body.dir === "string" ? body.dir.trim() : "";
-  const baseRef = typeof body.baseRef === "string" && body.baseRef.trim() ? body.baseRef.trim() : "HEAD";
-  const createNew = body.createNew === true;
-  const mcpConfigIds = parseStringArray(body.mcpConfigIds);
-  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds);
+  spawnFromBody(body);
+  return c.body(null, 204);
+});
+
+switchboardApp.post("/schedules", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const label = typeof body.label === "string" ? body.label.trim() : "";
+  const runAt = typeof body.runAt === "number" ? body.runAt : NaN;
+  if (!label) return c.text("label is required", 400);
+  if (!Number.isFinite(runAt) || runAt <= Date.now()) return c.text("runAt must be a time in the future", 400);
+
+  const payload = body.payload as Record<string, unknown> | undefined;
+  if (!payload || typeof payload !== "object") return c.text("payload is required", 400);
+
+  if (payload.kind === "message") {
+    const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
+    const text = typeof payload.text === "string" ? payload.text.trim() : "";
+    const session = state.sessions.find((s) => s.id === sessionId);
+    if (!session) return c.text("unknown session", 400);
+    if (!text) return c.text("message text is required", 400);
+    createSchedule(label, runAt, { kind: "message", sessionId, sessionLabel: session.name, text });
+    return c.body(null, 204);
+  }
+
+  if (payload.kind === "spawn") {
+    const spawnBody = payload.body as Record<string, unknown> | undefined;
+    if (!spawnBody || (spawnBody.mode !== "new" && spawnBody.mode !== "solo")) {
+      return c.text("spawn payload must have mode \"new\" or \"solo\"", 400);
+    }
+    const recurrence = parseRecurrence(body.recurrence);
+    if (body.recurrence != null && recurrence === null) return c.text("invalid recurrence", 400);
+    createSchedule(label, runAt, { kind: "spawn", body: spawnBody }, recurrence);
+    return c.body(null, 204);
+  }
+
+  return c.text("unknown payload kind", 400);
+});
+
+switchboardApp.delete("/schedules/:id", (c) => {
+  deleteSchedule(c.req.param("id"));
   return c.body(null, 204);
 });
 
@@ -248,6 +263,20 @@ switchboardApp.post("/mcp-configs", async (c) => {
   return c.body(null, 204);
 });
 
+switchboardApp.put("/mcp-configs/:id", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const updated = updateMcpConfig(c.req.param("id"), {
+    name: typeof body.name === "string" ? body.name : "",
+    transport: parseTransport(body.transport),
+    command: typeof body.command === "string" ? body.command : "",
+    args: parseStringArray(body.args),
+    env: parseStringRecord(body.env),
+    url: typeof body.url === "string" ? body.url : "",
+    headers: parseStringRecord(body.headers),
+  });
+  return updated ? c.body(null, 204) : c.body(null, 404);
+});
+
 switchboardApp.delete("/mcp-configs/:id", (c) => {
   deleteMcpConfig(c.req.param("id"));
   return c.body(null, 204);
@@ -257,3 +286,7 @@ switchboardApp.post("/undo/:key", (c) => {
   undoAction(c.req.param("key"));
   return c.body(null, 204);
 });
+
+// routes.ts is imported exactly once, at server startup (main.ts) — this
+// boots the schedule poller alongside it.
+startScheduler();
