@@ -162,15 +162,19 @@ orchestrationApp.post("/boards/:board/cards", async (c) => {
   const board = c.get("board");
   if (typeof body.title !== "string" || !body.title.trim()) return c.text("title is required", 400);
   if (typeof body.description !== "string") return c.text("description is required", 400);
-  const card = await createCard(kv, board.id, {
-    title: body.title,
-    description: body.description,
-    priority: typeof body.priority === "number" ? body.priority : undefined,
-    dependsOn: parseStringArray(body.dependsOn),
-    fileScope: parseStringArray(body.fileScope),
-    acceptance: parseStringArray(body.acceptance),
-  });
-  return c.json(card, 201);
+  try {
+    const card = await createCard(kv, board.id, {
+      title: body.title,
+      description: body.description,
+      priority: typeof body.priority === "number" ? body.priority : undefined,
+      dependsOn: parseStringArray(body.dependsOn),
+      fileScope: parseStringArray(body.fileScope),
+      acceptance: parseStringArray(body.acceptance),
+    });
+    return c.json(card, 201);
+  } catch (err) {
+    return c.text(String(err instanceof Error ? err.message : err), 400);
+  }
 });
 
 orchestrationApp.get("/boards/:board/cards/:id", async (c) => {
