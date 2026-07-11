@@ -5,9 +5,9 @@
 // MCP tool layer (M3) can call the exact same service functions later
 // without duplicating any coordination rules.
 //
-// Scope note: M1 only. Agent registration/roster (M2), messaging, and the
-// SSE event tail (M4) are deliberately not wired up yet — see the build
-// order in agent-kanban-orchestration-plan-v2-1.md.
+// Scope note: M1 (core store) + M2 (agents/heartbeats/reaper). Messaging
+// and the SSE event tail (M4) are deliberately not wired up yet — see the
+// build order in agent-kanban-orchestration-plan-v2-1.md.
 
 import { Hono } from "jsr:@hono/hono";
 import { getKv } from "./kv.ts";
@@ -19,15 +19,19 @@ import {
   createBoard,
   createCard,
   getCard,
+  heartbeat,
+  listAgents,
   listBoards,
   listCards,
   listEvents,
   moveCard,
+  registerAgent,
   releaseCard,
   resolveBoard,
+  startReaper,
   updateCardProgress,
 } from "./service.ts";
-import type { Board, CardStatus } from "./types.ts";
+import type { AgentStatus, Board, CardStatus } from "./types.ts";
 
 export const orchestrationApp = new Hono<{ Variables: { board: Board } }>();
 
@@ -103,6 +107,37 @@ orchestrationApp.post("/boards/:board/archive", async (c) => {
   const board = c.get("board");
   const archived = await archiveBoard(kv, board.id);
   return archived ? c.json(archived) : c.text("archive failed, retry", 409);
+});
+
+orchestrationApp.post("/boards/:board/agents", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const kv = await getKv();
+  const board = c.get("board");
+  if (typeof body.name !== "string" || !body.name.trim()) return c.text("name is required", 400);
+  const agent = await registerAgent(kv, board.id, {
+    name: body.name,
+    role: typeof body.role === "string" ? body.role : "worker",
+    meta: typeof body.meta === "object" && body.meta !== null ? (body.meta as Record<string, string>) : undefined,
+  });
+  return c.json(agent, 201);
+});
+
+orchestrationApp.get("/boards/:board/agents", async (c) => {
+  const kv = await getKv();
+  const board = c.get("board");
+  return c.json(await listAgents(kv, board.id));
+});
+
+orchestrationApp.post("/boards/:board/agents/:id/heartbeat", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const kv = await getKv();
+  const board = c.get("board");
+  const status = typeof body.status === "string" ? (body.status as AgentStatus) : undefined;
+  try {
+    return c.json(await heartbeat(kv, board.id, c.req.param("id"), status));
+  } catch (err) {
+    return c.text(String(err instanceof Error ? err.message : err), 404);
+  }
 });
 
 orchestrationApp.get("/boards/:board/cards", async (c) => {
@@ -233,3 +268,8 @@ orchestrationApp.get("/boards/:board/events", async (c) => {
   const events = await listEvents(kv, board.id, since);
   return c.json(events);
 });
+
+// routes.ts is imported exactly once, at server startup (main.ts) — this
+// top-level await means the server doesn't start accepting requests until
+// KV is open, and boots the lease/liveness reaper alongside it.
+startReaper(await getKv());

@@ -4,15 +4,24 @@
 // write. REST routes and (later) MCP tools both call these functions
 // directly, so there's exactly one place coordination rules live.
 //
-// Scope note: this file covers M1 (core store: boards, cards, atomic claim,
-// events) per the build order in agent-kanban-orchestration-plan-v2-1.md.
-// Agents/heartbeats/reaper (M2), the MCP surface (M3), and messaging (M4)
-// are not implemented yet — claim functions take a bare agentId string
-// rather than requiring a registered Agent record.
+// Scope note: this file covers M1 (core store) and M2 (agents, heartbeats,
+// the lease reaper) per the build order in
+// agent-kanban-orchestration-plan-v2-1.md. The MCP surface (M3) and
+// messaging (M4) are not implemented yet.
 
 import { monotonicUlid } from "jsr:@std/ulid";
 import { keys } from "./kv.ts";
-import { type Board, type BoardEvent, type Card, type CardStatus, DEFAULT_LEASE_MS, type EventType } from "./types.ts";
+import {
+  type Agent,
+  type AgentStatus,
+  type Board,
+  type BoardEvent,
+  type Card,
+  type CardStatus,
+  DEFAULT_HEARTBEAT_MS,
+  DEFAULT_LEASE_MS,
+  type EventType,
+} from "./types.ts";
 
 // ---------- Boards ----------
 
@@ -231,27 +240,46 @@ export type ClaimResult =
 // fresh (never trusts a caller-supplied snapshot) and lets kv.atomic()'s
 // .check() decide the race — if another caller claimed it first, the
 // versionstamp check fails, .commit() reports !ok, and we return null so
-// the caller can try the next candidate instead of erroring out.
+// the caller can try the next candidate instead of erroring out. Also
+// checks the agent record exists and updates its currentCardId/status in
+// the same atomic transaction, so a card is never claimed by an agent the
+// board doesn't know about, and get_team_status is never stale mid-claim.
 async function tryClaim(kv: Deno.Kv, boardId: string, cardId: string, agentId: string, leaseMs: number): Promise<Card | null> {
-  const entry = await kv.get<Card>(keys.card(boardId, cardId));
-  if (!entry.value || entry.value.status !== "ready") return null;
+  const [cardEntry, agentEntry] = await Promise.all([
+    kv.get<Card>(keys.card(boardId, cardId)),
+    kv.get<Agent>(keys.agent(boardId, agentId)),
+  ]);
+  if (!agentEntry.value || !cardEntry.value || cardEntry.value.status !== "ready") return null;
+
   const now = Date.now();
-  const updated: Card = { ...entry.value, status: "in_progress", assignee: agentId, leaseExpiresAt: now + leaseMs, updatedAt: now };
-  const event = makeEvent(boardId, "card.claimed", agentId, cardId, `claimed by ${agentId}`);
+  const updatedCard: Card = {
+    ...cardEntry.value,
+    status: "in_progress",
+    assignee: agentId,
+    leaseExpiresAt: now + leaseMs,
+    updatedAt: now,
+  };
+  const updatedAgent: Agent = { ...agentEntry.value, currentCardId: cardId, status: "working", lastHeartbeatAt: now };
+  const event = makeEvent(boardId, "card.claimed", agentId, cardId, `claimed by ${agentEntry.value.name}`);
   const res = await kv.atomic()
-    .check(entry)
+    .check(cardEntry)
+    .check(agentEntry)
     .delete(keys.cardByStatus(boardId, "ready", cardId))
-    .set(keys.card(boardId, cardId), updated)
+    .set(keys.card(boardId, cardId), updatedCard)
     .set(keys.cardByStatus(boardId, "in_progress", cardId), cardId)
     .set(keys.cardByAgent(boardId, agentId, cardId), cardId)
+    .set(keys.agent(boardId, agentId), updatedAgent)
     .set(keys.event(boardId, event.id), event)
     .commit();
-  return res.ok ? updated : null;
+  return res.ok ? updatedCard : null;
 }
 
 export async function claimNextCard(kv: Deno.Kv, boardId: string, agentId: string): Promise<ClaimResult> {
   const board = await getBoardById(kv, boardId);
   if (!board) return { ok: false, message: `unknown board: ${boardId}`, nearMisses: [] };
+  if (!(await getAgent(kv, boardId, agentId))) {
+    return { ok: false, message: `unknown agent: ${agentId} (register first)`, nearMisses: [] };
+  }
   const leaseMs = board.leaseMs ?? DEFAULT_LEASE_MS;
 
   const readyCards = await listCardsByStatus(kv, boardId, "ready");
@@ -285,6 +313,9 @@ export async function claimNextCard(kv: Deno.Kv, boardId: string, agentId: strin
 export async function claimCard(kv: Deno.Kv, boardId: string, agentId: string, cardId: string): Promise<ClaimResult> {
   const board = await getBoardById(kv, boardId);
   if (!board) return { ok: false, message: `unknown board: ${boardId}`, nearMisses: [] };
+  if (!(await getAgent(kv, boardId, agentId))) {
+    return { ok: false, message: `unknown agent: ${agentId} (register first)`, nearMisses: [] };
+  }
 
   const entry = await kv.get<Card>(keys.card(boardId, cardId));
   if (!entry.value) return { ok: false, message: `unknown card: ${cardId}`, nearMisses: [] };
@@ -382,7 +413,7 @@ export async function moveCard(
   status: CardStatus,
   detail?: string,
 ): Promise<Card> {
-  return atomicPatchCard(
+  const card = await atomicPatchCard(
     kv,
     boardId,
     cardId,
@@ -392,6 +423,15 @@ export async function moveCard(
     },
     { type: "card.moved", actor: agentId, detail: detail ?? `-> ${status}` },
   );
+  // Blocked cards "keep their assignee but release their lease pressure"
+  // (plan section 4) — the card stays with the agent, but the agent's own
+  // status reflects that it can't currently make progress. Moving back out
+  // of blocked (to in_progress) restores "working".
+  if (card.assignee) {
+    if (status === "blocked") await setAgentCurrentCard(kv, boardId, card.assignee, cardId, "blocked");
+    else if (status === "in_progress") await setAgentCurrentCard(kv, boardId, card.assignee, cardId, "working");
+  }
+  return card;
 }
 
 export async function completeCard(
@@ -420,12 +460,13 @@ export async function completeCard(
     },
     { type: "card.completed", actor: agentId, detail: result },
   );
+  await setAgentCurrentCard(kv, boardId, agentId, undefined, "idle");
   await unblockDependents(kv, boardId, cardId);
   return card;
 }
 
 export async function releaseCard(kv: Deno.Kv, boardId: string, cardId: string, agentId: string, reason: string): Promise<Card> {
-  return atomicPatchCard(
+  const card = await atomicPatchCard(
     kv,
     boardId,
     cardId,
@@ -435,6 +476,8 @@ export async function releaseCard(kv: Deno.Kv, boardId: string, cardId: string, 
     },
     { type: "card.released", actor: agentId, detail: reason },
   );
+  await setAgentCurrentCard(kv, boardId, agentId, undefined, "idle");
+  return card;
 }
 
 // Dependency gating: a card sitting in "backlog" waiting on the card that
@@ -460,4 +503,209 @@ async function unblockDependents(kv: Deno.Kv, boardId: string, completedCardId: 
       // Lost a race or card changed underneath us — not fatal, see above.
     }
   }
+}
+
+// ---------- Agents ----------
+
+export async function getAgent(kv: Deno.Kv, boardId: string, agentId: string): Promise<Agent | null> {
+  const entry = await kv.get<Agent>(keys.agent(boardId, agentId));
+  return entry.value;
+}
+
+export async function listAgents(kv: Deno.Kv, boardId: string): Promise<Agent[]> {
+  const agents: Agent[] = [];
+  for await (const entry of kv.list<Agent>({ prefix: keys.agentsPrefix(boardId) })) agents.push(entry.value);
+  return agents;
+}
+
+// Upserts by name within the board — idempotent, so a session that
+// reconnects (or a --resume'd Claude Code session) can re-register with the
+// same name and reclaim its identity rather than accumulating duplicate
+// agent records. Races on a brand-new name are resolved the same way slug
+// uniqueness is: .check() the name index, and if we lose, retry — the
+// retry will find the name now taken and fall into the upsert branch.
+export async function registerAgent(
+  kv: Deno.Kv,
+  boardId: string,
+  input: { name: string; role: string; meta?: Record<string, string> },
+): Promise<Agent> {
+  const nameKey = keys.agentByName(boardId, input.name);
+  for (let attempt = 0; attempt < MAX_PATCH_RETRIES; attempt++) {
+    const nameEntry = await kv.get<string>(nameKey);
+
+    if (nameEntry.value) {
+      const agentEntry = await kv.get<Agent>(keys.agent(boardId, nameEntry.value));
+      if (!agentEntry.value) continue; // index pointed at a missing record — retry and self-heal
+      const updated: Agent = {
+        ...agentEntry.value,
+        role: input.role,
+        status: "idle",
+        lastHeartbeatAt: Date.now(),
+        meta: input.meta ?? agentEntry.value.meta,
+      };
+      const res = await kv.atomic().check(agentEntry).set(keys.agent(boardId, updated.id), updated).commit();
+      if (res.ok) return updated;
+      continue;
+    }
+
+    const agent: Agent = {
+      id: monotonicUlid(),
+      boardId,
+      name: input.name,
+      role: input.role,
+      status: "idle",
+      lastHeartbeatAt: Date.now(),
+      registeredAt: Date.now(),
+      meta: input.meta,
+    };
+    const event = makeEvent(boardId, "agent.registered", agent.id, undefined, `${agent.name} (${agent.role}) registered`);
+    const res = await kv.atomic()
+      .check(nameEntry)
+      .set(keys.agent(boardId, agent.id), agent)
+      .set(nameKey, agent.id)
+      .set(keys.event(boardId, event.id), event)
+      .commit();
+    if (res.ok) return agent;
+    // Lost the race for this name — next attempt finds it taken and upserts.
+  }
+  throw new Error(`register agent ${input.name} conflicted too many times`);
+}
+
+// "Any progress update or heartbeat from the assignee extends the lease"
+// (plan section 4) — so heartbeat renews the lease on whatever card this
+// agent currently holds, in the same transaction as the liveness bump.
+export async function heartbeat(kv: Deno.Kv, boardId: string, agentId: string, status?: AgentStatus): Promise<Agent> {
+  const board = await getBoardById(kv, boardId);
+  if (!board) throw new Error(`unknown board: ${boardId}`);
+  const leaseMs = board.leaseMs ?? DEFAULT_LEASE_MS;
+
+  for (let attempt = 0; attempt < MAX_PATCH_RETRIES; attempt++) {
+    const entry = await kv.get<Agent>(keys.agent(boardId, agentId));
+    if (!entry.value) throw new Error(`unknown agent: ${agentId}`);
+    const updated: Agent = { ...entry.value, lastHeartbeatAt: Date.now(), status: status ?? entry.value.status };
+
+    let tx = kv.atomic().check(entry).set(keys.agent(boardId, agentId), updated);
+    if (updated.currentCardId) {
+      const cardEntry = await kv.get<Card>(keys.card(boardId, updated.currentCardId));
+      if (cardEntry.value && cardEntry.value.assignee === agentId && cardEntry.value.status === "in_progress") {
+        tx = tx.check(cardEntry).set(keys.card(boardId, updated.currentCardId), {
+          ...cardEntry.value,
+          leaseExpiresAt: Date.now() + leaseMs,
+        });
+      }
+    }
+
+    const res = await tx.commit();
+    if (res.ok) return updated;
+  }
+  throw new Error(`heartbeat for agent ${agentId} conflicted too many times`);
+}
+
+// Best-effort agent-side update after a card transition (complete/release/
+// move) has already committed. Not folded into atomicPatchCard's single
+// transaction because that helper is card-only and generic across four
+// different operations — deliberately simple for now. If this write is
+// lost to a race or the process dies right here, the card's own state
+// (source of truth) is already correct; the agent record is merely stale
+// until its next heartbeat or claim self-heals it. Silently no-ops if the
+// agent record doesn't exist, since claim is the only place that currently
+// *requires* one — a card can still be released/completed by whatever
+// agentId claimed it even in tests that don't go through registerAgent.
+async function setAgentCurrentCard(
+  kv: Deno.Kv,
+  boardId: string,
+  agentId: string,
+  cardId: string | undefined,
+  status: AgentStatus,
+): Promise<void> {
+  for (let attempt = 0; attempt < MAX_PATCH_RETRIES; attempt++) {
+    const entry = await kv.get<Agent>(keys.agent(boardId, agentId));
+    if (!entry.value) return;
+    const updated: Agent = { ...entry.value, currentCardId: cardId, status };
+    const res = await kv.atomic().check(entry).set(keys.agent(boardId, agentId), updated).commit();
+    if (res.ok) return;
+  }
+}
+
+// ---------- Reaper: liveness + lease expiry ----------
+
+export interface SweepResult {
+  agentsMarkedOffline: string[];
+  cardsReleased: string[];
+}
+
+// A handful of missed heartbeats, not just one late one — a single slow
+// tool call shouldn't flip an agent offline.
+const OFFLINE_MISSED_HEARTBEATS = 3;
+
+// One pass over one board: mark stale agents offline, release in-progress
+// cards whose lease expired back to "ready". Cards in "blocked" are a
+// different status entirely, so listCardsByStatus(..., "in_progress")
+// already excludes them — "the reaper ignores blocked" falls out for free.
+export async function sweepBoard(kv: Deno.Kv, board: Board): Promise<SweepResult> {
+  const now = Date.now();
+  const heartbeatMs = board.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
+  const offlineThresholdMs = heartbeatMs * OFFLINE_MISSED_HEARTBEATS;
+  const result: SweepResult = { agentsMarkedOffline: [], cardsReleased: [] };
+
+  const agents = await listAgents(kv, board.id);
+  for (const agent of agents) {
+    if (agent.status === "offline" || now - agent.lastHeartbeatAt <= offlineThresholdMs) continue;
+    const entry = await kv.get<Agent>(keys.agent(board.id, agent.id));
+    if (!entry.value || entry.value.status === "offline") continue;
+    const updated: Agent = { ...entry.value, status: "offline" };
+    const event = makeEvent(board.id, "agent.offline", "system", undefined, `${agent.name} missed heartbeat threshold`);
+    const res = await kv.atomic().check(entry).set(keys.agent(board.id, agent.id), updated).set(keys.event(board.id, event.id), event)
+      .commit();
+    if (res.ok) result.agentsMarkedOffline.push(agent.id);
+  }
+
+  const inProgress = await listCardsByStatus(kv, board.id, "in_progress");
+  for (const card of inProgress) {
+    if (!card.leaseExpiresAt || card.leaseExpiresAt > now) continue;
+    const entry = await kv.get<Card>(keys.card(board.id, card.id));
+    if (!entry.value || entry.value.status !== "in_progress" || !entry.value.leaseExpiresAt || entry.value.leaseExpiresAt > now) {
+      continue;
+    }
+    const releasedAgent = entry.value.assignee;
+    const updated: Card = { ...entry.value, status: "ready", assignee: undefined, leaseExpiresAt: undefined, updatedAt: now };
+    const event = makeEvent(
+      board.id,
+      "card.lease_expired",
+      "system",
+      card.id,
+      releasedAgent ? `lease expired, released from ${releasedAgent}` : "lease expired",
+    );
+    let tx = kv.atomic()
+      .check(entry)
+      .delete(keys.cardByStatus(board.id, "in_progress", card.id))
+      .set(keys.card(board.id, card.id), updated)
+      .set(keys.cardByStatus(board.id, "ready", card.id), card.id)
+      .set(keys.event(board.id, event.id), event);
+    if (releasedAgent) tx = tx.delete(keys.cardByAgent(board.id, releasedAgent, card.id));
+    const res = await tx.commit();
+    if (res.ok) {
+      result.cardsReleased.push(card.id);
+      if (releasedAgent) await setAgentCurrentCard(kv, board.id, releasedAgent, undefined, "idle");
+    }
+  }
+
+  return result;
+}
+
+const REAPER_TICK_MS = 15_000;
+let reaperTimer: ReturnType<typeof setInterval> | undefined;
+
+// In-process setInterval reaper (plan section 4) — iterates every
+// non-archived board on each tick. sweepBoard() is exported separately so
+// tests can drive a single sweep deterministically instead of waiting on
+// a real 15s interval.
+export function startReaper(kv: Deno.Kv): void {
+  if (reaperTimer) return;
+  const tick = async () => {
+    const boards = await listBoards(kv);
+    for (const board of boards) await sweepBoard(kv, board);
+  };
+  tick();
+  reaperTimer = setInterval(tick, REAPER_TICK_MS);
 }
