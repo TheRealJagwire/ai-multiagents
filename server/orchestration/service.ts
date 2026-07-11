@@ -202,6 +202,13 @@ export async function createCard(
   },
 ): Promise<Card> {
   const dependsOn = input.dependsOn ?? [];
+  if (dependsOn.length > 0) {
+    const deps = await Promise.all(dependsOn.map((id) => kv.get<Card>(keys.card(boardId, id))));
+    const unknown = dependsOn.filter((_, i) => deps[i].value === null);
+    if (unknown.length > 0) {
+      throw new Error(`unknown dependsOn card(s): ${unknown.join(", ")}`);
+    }
+  }
   const now = Date.now();
   const card: Card = {
     id: monotonicUlid(),
