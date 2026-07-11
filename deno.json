@@ -4,6 +4,7 @@
   "exports": "./main.ts",
   "nodeModulesDir": "auto",
   "exclude": ["dist", "release", "node_modules"],
+  "unstable": ["kv"],
   "compilerOptions": {
     "strict": true
   },

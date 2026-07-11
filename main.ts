@@ -1,6 +1,7 @@
 import { Hono } from "jsr:@hono/hono";
 import { serveStatic } from "jsr:@hono/hono/deno";
 import { switchboardApp } from "./server/switchboard/routes.ts";
+import { orchestrationApp } from "./server/orchestration/routes.ts";
 
 // Resolved relative to this module's own location, not the process's cwd —
 // a packaged .app launched via Finder/`open` gets an unrelated cwd, so a
@@ -11,6 +12,7 @@ const DIST_DIR = new URL("./dist", import.meta.url).pathname;
 const app = new Hono();
 
 app.route("/api/switchboard", switchboardApp);
+app.route("/api/orchestration", orchestrationApp);
 
 app.use("*", serveStatic({ root: DIST_DIR }));
 app.use("*", serveStatic({ path: `${DIST_DIR}/index.html` }));
