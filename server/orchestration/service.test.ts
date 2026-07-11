@@ -175,6 +175,64 @@ Deno.test("createCard: a card with dependencies starts in backlog and becomes re
   }
 });
 
+Deno.test("createCard: rejects a dependsOn id that does not exist on the board", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "deps-unknown");
+    const err = await assertRejects(
+      () => createCard(kv, board.id, { title: "Orphan", description: "x", dependsOn: ["01FAKEDEPENDENCYID0000000"] }),
+      Error,
+      "unknown dependsOn card(s): 01FAKEDEPENDENCYID0000000",
+    );
+    assert(err.message.includes("01FAKEDEPENDENCYID0000000"), "error names the unknown id");
+
+    // Nothing was written — the board has no cards and no card.created event.
+    assertEquals((await listCards(kv, board.id)).length, 0);
+    const events = await listEvents(kv, board.id);
+    assert(events.every((e) => e.type !== "card.created"));
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("createCard: a valid existing dependsOn still succeeds and starts in backlog", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "deps-valid");
+    const upstream = await createCard(kv, board.id, { title: "Upstream", description: "x" });
+    const downstream = await createCard(kv, board.id, {
+      title: "Downstream",
+      description: "x",
+      dependsOn: [upstream.id],
+    });
+    assertEquals(downstream.status, "backlog");
+    assertEquals(downstream.dependsOn, [upstream.id]);
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("createCard: one valid + one unknown dependsOn throws naming only the unknown id", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "deps-mixed");
+    const upstream = await createCard(kv, board.id, { title: "Upstream", description: "x" });
+    const err = await assertRejects(
+      () => createCard(kv, board.id, { title: "Mixed", description: "x", dependsOn: [upstream.id, "01FAKEDEPENDENCYID0000000"] }),
+      Error,
+      "unknown dependsOn card(s): 01FAKEDEPENDENCYID0000000",
+    );
+    assert(!err.message.includes(upstream.id), "error does not name the valid id");
+
+    // Only the upstream card exists; the rejected card wrote nothing.
+    const cards = await listCards(kv, board.id);
+    assertEquals(cards.length, 1);
+    assertEquals(cards[0].id, upstream.id);
+  } finally {
+    kv.close();
+  }
+});
+
 Deno.test("claimCard: refuses a card whose fileScope overlaps an in-progress card", async () => {
   const kv = await freshKv();
   try {
