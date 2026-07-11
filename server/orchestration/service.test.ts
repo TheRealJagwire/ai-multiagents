@@ -1,5 +1,6 @@
-import { assert, assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import {
+  checkMessages,
   claimCard,
   claimNextCard,
   completeCard,
@@ -12,7 +13,9 @@ import {
   listEvents,
   moveCard,
   registerAgent,
+  sendMessage,
   sweepBoard,
+  watchEvents,
 } from "./service.ts";
 
 async function freshKv(): Promise<Deno.Kv> {
@@ -321,6 +324,132 @@ Deno.test("heartbeat: renews the lease on the agent's current card", async () =>
 
     const refreshed = await getCard(kv, board.id, card.id);
     assert(refreshed!.leaseExpiresAt! > originalLease, "heartbeat should have pushed the lease forward");
+  } finally {
+    kv.close();
+  }
+});
+
+// M4 acceptance test (plan section 8): two concurrent sessions exchanging a
+// message about a shared interface — the scenario the whole messaging
+// design exists for (an agent changes a contract another agent's card
+// depends on, and tells them before either assumes anything).
+Deno.test("messaging: two agents exchange a direct message about a shared interface", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "msg-direct");
+    const backend = await mustRegister(kv, board.id, "backend-worker");
+    const frontend = await mustRegister(kv, board.id, "frontend-worker");
+
+    // frontend has nothing yet — checking messages drains an empty inbox.
+    assertEquals(await checkMessages(kv, board.id, frontend.id), []);
+
+    const sent = await sendMessage(kv, board.id, {
+      from: backend.id,
+      to: frontend.id,
+      body: "Changed /api/users response shape: `name` split into `firstName`/`lastName`.",
+    });
+    assertEquals(sent.from, backend.id);
+    assertEquals(sent.to, frontend.id);
+
+    // The message shows up in a board event too, so watch_events-only
+    // consumers (e.g. a human tailing SSE) still see that it happened.
+    const events = await listEvents(kv, board.id);
+    assert(events.some((e) => e.type === "message.sent" && e.actor === backend.id));
+
+    const inbox = await checkMessages(kv, board.id, frontend.id);
+    assertEquals(inbox.length, 1);
+    assertEquals(inbox[0].body, sent.body);
+
+    // Inbox semantics: read messages are deleted, so a second drain is empty.
+    assertEquals(await checkMessages(kv, board.id, frontend.id), []);
+    // backend's own inbox is untouched by frontend's read.
+    assertEquals(await checkMessages(kv, board.id, backend.id), []);
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("messaging: broadcast is a shared ring each agent reads once via its own cursor", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "msg-broadcast");
+    const lead = await mustRegister(kv, board.id, "lead");
+    const workerA = await mustRegister(kv, board.id, "worker-a");
+    const workerB = await mustRegister(kv, board.id, "worker-b");
+
+    await sendMessage(kv, board.id, { from: lead.id, to: "*", body: "freeze on src/api/** until further notice" });
+
+    const seenByA = await checkMessages(kv, board.id, workerA.id);
+    const seenByB = await checkMessages(kv, board.id, workerB.id);
+    assertEquals(seenByA.length, 1);
+    assertEquals(seenByB.length, 1);
+    assertEquals(seenByA[0].body, seenByB[0].body);
+
+    // Each reader's cursor advanced independently — a second check for A
+    // sees nothing new, but a fresh broadcast is picked up by both again.
+    assertEquals(await checkMessages(kv, board.id, workerA.id), []);
+    await sendMessage(kv, board.id, { from: lead.id, to: "*", body: "freeze lifted" });
+    assertEquals((await checkMessages(kv, board.id, workerA.id)).length, 1);
+    assertEquals((await checkMessages(kv, board.id, workerB.id)).length, 1);
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("messaging: sendMessage rejects unregistered from/to agents", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "msg-unregistered");
+    const agent = await mustRegister(kv, board.id, "worker-1");
+
+    await assertRejects(() => sendMessage(kv, board.id, { from: "not-an-agent", to: agent.id, body: "hi" }));
+    await assertRejects(() => sendMessage(kv, board.id, { from: agent.id, to: "not-an-agent", body: "hi" }));
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("watchEvents: advances the cursor and only returns events past it", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "watch-events");
+    const agent = await mustRegister(kv, board.id, "watcher");
+    await createCard(kv, board.id, { title: "Card 1", description: "x" });
+
+    const first = await watchEvents(kv, board.id, agent.id);
+    assert(first.length > 0);
+
+    // Nothing new since the cursor advanced.
+    assertEquals(await watchEvents(kv, board.id, agent.id), []);
+
+    await createCard(kv, board.id, { title: "Card 2", description: "y" });
+    const second = await watchEvents(kv, board.id, agent.id);
+    assertEquals(second.length, 1);
+    assertEquals(second[0].detail, "Card 2");
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("heartbeat: reports unread-message and new-event counts without consuming them", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "heartbeat-counts");
+    const agent = await mustRegister(kv, board.id, "worker-1");
+    const other = await mustRegister(kv, board.id, "worker-2");
+
+    await sendMessage(kv, board.id, { from: other.id, to: agent.id, body: "hey" });
+    await createCard(kv, board.id, { title: "New card", description: "x" });
+
+    const result = await heartbeat(kv, board.id, agent.id);
+    assertEquals(result.agent.id, agent.id);
+    assert(result.unreadMessages >= 1, "should see the unread inbox message");
+    assert(result.newEvents >= 1, "should see the new card.created event");
+
+    // A peek, not a drain — the message and events are still there for the
+    // agent's actual check_messages/watch_events calls.
+    assertEquals((await checkMessages(kv, board.id, agent.id)).length, 1);
+    assert((await watchEvents(kv, board.id, agent.id)).length >= 1);
   } finally {
     kv.close();
   }

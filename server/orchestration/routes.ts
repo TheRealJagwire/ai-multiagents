@@ -5,11 +5,12 @@
 // MCP tool layer (M3) can call the exact same service functions later
 // without duplicating any coordination rules.
 //
-// Scope note: M1 (core store) + M2 (agents/heartbeats/reaper). Messaging
-// and the SSE event tail (M4) are deliberately not wired up yet — see the
-// build order in agent-kanban-orchestration-plan-v2-1.md.
+// Scope note: M1 (core store), M2 (agents/heartbeats/reaper), and M4
+// (messaging + SSE event tail) — see the build order in
+// agent-kanban-orchestration-plan-v2-1.md.
 
 import { Hono } from "jsr:@hono/hono";
+import { streamSSE } from "jsr:@hono/hono/streaming";
 import { getKv } from "./kv.ts";
 import { mcpFetch } from "./mcp.ts";
 import {
@@ -29,6 +30,7 @@ import {
   registerAgent,
   releaseCard,
   resolveBoard,
+  sendMessage,
   startReaper,
   updateCardProgress,
 } from "./service.ts";
@@ -263,12 +265,66 @@ orchestrationApp.post("/boards/:board/cards/:id/release", async (c) => {
   }
 });
 
+orchestrationApp.post("/boards/:board/messages", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const kv = await getKv();
+  const board = c.get("board");
+  const from = typeof body.from === "string" ? body.from : "";
+  const to = typeof body.to === "string" ? body.to : "";
+  const text = typeof body.body === "string" ? body.body : "";
+  if (!from) return c.text("from is required", 400);
+  if (!to) return c.text("to is required", 400);
+  if (!text) return c.text("body is required", 400);
+  try {
+    const message = await sendMessage(kv, board.id, { from, to, body: text, cardId: typeof body.cardId === "string" ? body.cardId : undefined });
+    return c.json(message, 201);
+  } catch (err) {
+    return c.text(String(err instanceof Error ? err.message : err), 400);
+  }
+});
+
 orchestrationApp.get("/boards/:board/events", async (c) => {
   const kv = await getKv();
   const board = c.get("board");
   const since = c.req.query("since") || undefined;
   const events = await listEvents(kv, board.id, since);
   return c.json(events);
+});
+
+// SSE tail (plan section 6) — no in-process event bus for orchestration
+// (unlike switchboard's bus.ts, since all state here lives in Deno KV, not
+// in-memory), so this polls listEvents on a short interval starting from
+// "now," pushing anything new. Pull-based delivery is an accepted latency
+// tradeoff per the plan's own risk notes; a human tailing a board isn't the
+// same low-latency requirement as an agent's own MCP-side polling loop.
+const SSE_POLL_MS = 1000;
+
+orchestrationApp.get("/boards/:board/events/stream", (c) => {
+  const board = c.get("board");
+  const initialSince = c.req.query("since") || undefined;
+  return streamSSE(c, async (stream) => {
+    const kv = await getKv();
+    // No ?since= given: tail from *now*, not the full history — a client
+    // that wants replay-from-a-point passes since explicitly (same param
+    // as GET /events).
+    let cursor = initialSince;
+    if (cursor === undefined) {
+      const existing = await listEvents(kv, board.id);
+      if (existing.length > 0) cursor = existing[existing.length - 1].id;
+    }
+    let closed = false;
+    stream.onAbort(() => {
+      closed = true;
+    });
+    while (!closed) {
+      const events = await listEvents(kv, board.id, cursor);
+      for (const event of events) {
+        await stream.writeSSE({ event: "board.event", data: JSON.stringify(event), id: event.id });
+        cursor = event.id;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SSE_POLL_MS));
+    }
+  });
 });
 
 // routes.ts is imported exactly once, at server startup (main.ts) — this

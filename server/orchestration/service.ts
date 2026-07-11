@@ -4,10 +4,9 @@
 // write. REST routes and (later) MCP tools both call these functions
 // directly, so there's exactly one place coordination rules live.
 //
-// Scope note: this file covers M1 (core store) and M2 (agents, heartbeats,
-// the lease reaper) per the build order in
-// agent-kanban-orchestration-plan-v2-1.md. The MCP surface (M3) and
-// messaging (M4) are not implemented yet.
+// Scope note: this file covers M1 (core store), M2 (agents, heartbeats, the
+// lease reaper), and M4 (messaging, event cursors) per the build order in
+// agent-kanban-orchestration-plan-v2-1.md.
 
 import { monotonicUlid } from "jsr:@std/ulid";
 import { keys } from "./kv.ts";
@@ -21,6 +20,7 @@ import {
   DEFAULT_HEARTBEAT_MS,
   DEFAULT_LEASE_MS,
   type EventType,
+  type Message,
 } from "./types.ts";
 
 // ---------- Boards ----------
@@ -580,15 +580,26 @@ export async function getAgentBoardId(kv: Deno.Kv, agentId: string): Promise<str
   return entry.value;
 }
 
+export interface HeartbeatResult {
+  agent: Agent;
+  unreadMessages: number; // undrained inbox + unread broadcasts, combined
+  newEvents: number; // events past this agent's watch_events cursor
+}
+
 // "Any progress update or heartbeat from the assignee extends the lease"
 // (plan section 4) — so heartbeat renews the lease on whatever card this
-// agent currently holds, in the same transaction as the liveness bump.
-export async function heartbeat(kv: Deno.Kv, boardId: string, agentId: string, status?: AgentStatus): Promise<Agent> {
+// agent currently holds, in the same transaction as the liveness bump. Also
+// doubles as the "anything I should know?" cheap ping (plan section 5):
+// counts unread messages and new events without draining/advancing either
+// cursor — that only happens when the agent actually calls check_messages /
+// watch_events.
+export async function heartbeat(kv: Deno.Kv, boardId: string, agentId: string, status?: AgentStatus): Promise<HeartbeatResult> {
   const board = await getBoardById(kv, boardId);
   if (!board) throw new Error(`unknown board: ${boardId}`);
   const leaseMs = board.leaseMs ?? DEFAULT_LEASE_MS;
 
-  for (let attempt = 0; attempt < MAX_PATCH_RETRIES; attempt++) {
+  let updatedAgent: Agent | null = null;
+  for (let attempt = 0; attempt < MAX_PATCH_RETRIES && !updatedAgent; attempt++) {
     const entry = await kv.get<Agent>(keys.agent(boardId, agentId));
     if (!entry.value) throw new Error(`unknown agent: ${agentId}`);
     const updated: Agent = { ...entry.value, lastHeartbeatAt: Date.now(), status: status ?? entry.value.status };
@@ -605,9 +616,21 @@ export async function heartbeat(kv: Deno.Kv, boardId: string, agentId: string, s
     }
 
     const res = await tx.commit();
-    if (res.ok) return updated;
+    if (res.ok) updatedAgent = updated;
   }
-  throw new Error(`heartbeat for agent ${agentId} conflicted too many times`);
+  if (!updatedAgent) throw new Error(`heartbeat for agent ${agentId} conflicted too many times`);
+
+  const [inbox, broadcastCursorEntry, eventsCursorEntry] = await Promise.all([
+    listInbox(kv, boardId, agentId),
+    kv.get<string>(keys.broadcastCursor(boardId, agentId)),
+    kv.get<string>(keys.cursor(boardId, agentId)),
+  ]);
+  const [newBroadcasts, newEvents] = await Promise.all([
+    listNewBroadcasts(kv, boardId, broadcastCursorEntry.value),
+    listEvents(kv, boardId, eventsCursorEntry.value ?? undefined),
+  ]);
+
+  return { agent: updatedAgent, unreadMessages: inbox.length + newBroadcasts.length, newEvents: newEvents.length };
 }
 
 // Best-effort agent-side update after a card transition (complete/release/
@@ -761,4 +784,95 @@ export async function getBoardStatus(kv: Deno.Kv, boardId: string): Promise<Boar
     activeAgents: agents.filter((a) => a.status !== "offline").length,
     queueDepth: columns.ready,
   };
+}
+
+// ---------- Messaging ----------
+//
+// Pull-based (plan section 3): there's no push channel into a Claude Code
+// session, so agents poll at natural checkpoints. Inbox messages (to a
+// specific agent) are deleted once read. Broadcasts ("*") are a shared ring
+// buffer — every agent reads the same records, so instead of deleting on
+// read, each agent tracks its own cursor into the ring.
+
+async function listInbox(kv: Deno.Kv, boardId: string, agentId: string): Promise<Message[]> {
+  const messages: Message[] = [];
+  for await (const entry of kv.list<Message>({ prefix: keys.inboxPrefix(boardId, agentId) })) messages.push(entry.value);
+  return messages;
+}
+
+// Same "start is inclusive, sinceId is exclusive" shape as listEvents.
+async function listNewBroadcasts(kv: Deno.Kv, boardId: string, sinceId: string | null): Promise<Message[]> {
+  const selector: Deno.KvListSelector = sinceId
+    ? { prefix: keys.broadcastPrefix(boardId), start: keys.broadcast(boardId, sinceId) }
+    : { prefix: keys.broadcastPrefix(boardId) };
+  const messages: Message[] = [];
+  for await (const entry of kv.list<Message>(selector)) {
+    if (sinceId && entry.value.id === sinceId) continue;
+    messages.push(entry.value);
+  }
+  return messages;
+}
+
+const MAX_BROADCAST_RING = 200;
+
+// Best-effort trim, run after a broadcast send — not part of the send's own
+// atomic transaction (it's a housekeeping concern, not a correctness one: a
+// ring briefly holding 201 messages instead of 200 is harmless).
+async function trimBroadcastRing(kv: Deno.Kv, boardId: string): Promise<void> {
+  const ids: string[] = [];
+  for await (const entry of kv.list<Message>({ prefix: keys.broadcastPrefix(boardId) })) ids.push(entry.value.id);
+  if (ids.length <= MAX_BROADCAST_RING) return;
+  ids.sort(); // ULIDs sort chronologically
+  for (const id of ids.slice(0, ids.length - MAX_BROADCAST_RING)) await kv.delete(keys.broadcast(boardId, id));
+}
+
+export async function sendMessage(
+  kv: Deno.Kv,
+  boardId: string,
+  input: { from: string; to: string; cardId?: string; body: string },
+): Promise<Message> {
+  if (!(await getAgent(kv, boardId, input.from))) throw new Error(`unknown agent: ${input.from}`);
+  if (input.to !== "*" && !(await getAgent(kv, boardId, input.to))) throw new Error(`unknown agent: ${input.to}`);
+
+  const message: Message = {
+    id: monotonicUlid(),
+    boardId,
+    from: input.from,
+    to: input.to,
+    cardId: input.cardId,
+    body: input.body,
+    createdAt: Date.now(),
+  };
+  const event = makeEvent(boardId, "message.sent", input.from, input.cardId, `to ${input.to}: ${input.body.slice(0, 80)}`);
+  const messageKey = input.to === "*" ? keys.broadcast(boardId, message.id) : keys.inbox(boardId, input.to, message.id);
+  const res = await kv.atomic().set(messageKey, message).set(keys.event(boardId, event.id), event).commit();
+  if (!res.ok) throw new Error("failed to send message");
+
+  if (input.to === "*") await trimBroadcastRing(kv, boardId);
+  return message;
+}
+
+// Drains the caller's inbox (deleting each message) and advances its
+// broadcast cursor past whatever's newly returned. Merged oldest-first —
+// ULID string comparison is chronological, so a plain sort suffices.
+export async function checkMessages(kv: Deno.Kv, boardId: string, agentId: string): Promise<Message[]> {
+  const inbox = await listInbox(kv, boardId, agentId);
+  for (const message of inbox) await kv.delete(keys.inbox(boardId, agentId, message.id));
+
+  const cursorEntry = await kv.get<string>(keys.broadcastCursor(boardId, agentId));
+  const broadcasts = await listNewBroadcasts(kv, boardId, cursorEntry.value);
+  if (broadcasts.length > 0) await kv.set(keys.broadcastCursor(boardId, agentId), broadcasts[broadcasts.length - 1].id);
+
+  return [...inbox, ...broadcasts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+// Events after the agent's stored cursor, or an explicit ULID if given
+// (letting a caller replay from an arbitrary point without disturbing its
+// stored position going forward) — then advances the cursor to the last
+// event returned. Poll-based awareness feed (plan section 5).
+export async function watchEvents(kv: Deno.Kv, boardId: string, agentId: string, since?: string): Promise<BoardEvent[]> {
+  const cursorEntry = await kv.get<string>(keys.cursor(boardId, agentId));
+  const events = await listEvents(kv, boardId, since ?? cursorEntry.value ?? undefined);
+  if (events.length > 0) await kv.set(keys.cursor(boardId, agentId), events[events.length - 1].id);
+  return events;
 }

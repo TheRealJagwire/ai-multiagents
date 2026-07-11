@@ -54,4 +54,8 @@ export const keys = {
   event: (boardId: string, eventId: string) => ["events", boardId, eventId] as const,
   eventsPrefix: (boardId: string) => ["events", boardId] as const,
   cursor: (boardId: string, agentId: string) => ["cursors", boardId, agentId, "events"] as const,
+  // Broadcasts are a shared ring buffer, not per-agent inboxes — each agent
+  // needs its own "how far have I read" pointer into it, separate from the
+  // events cursor above.
+  broadcastCursor: (boardId: string, agentId: string) => ["cursors", boardId, agentId, "broadcast"] as const,
 };

@@ -15,8 +15,8 @@
 // query param" trivial: it's just c.req.query("board"), read fresh on
 // every request, no session state to keep in sync.
 //
-// Scope note: M3 tools only (everything not needing messaging). send_message
-// / check_messages / watch_events are M4 and not implemented yet.
+// Scope note: full M3 + M4 tool surface, including send_message /
+// check_messages / watch_events.
 
 import { McpServer, ResourceTemplate } from "npm:@modelcontextprotocol/sdk@^1.29.0/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "npm:@modelcontextprotocol/sdk@^1.29.0/server/webStandardStreamableHttp.js";
@@ -147,7 +147,8 @@ function buildServer(queryBoard: string | undefined): McpServer {
   });
 
   server.registerTool("heartbeat", {
-    description: "Bump your liveness and renew the lease on your current card. Call periodically, and after any tool call that doesn't already do so.",
+    description:
+      "Bump your liveness and renew the lease on your current card. Call periodically, and after any tool call that doesn't already do so. Returns unread-message and new-event counts — a cheap 'anything I should know?' ping.",
     inputSchema: { agent_id: z.string(), status: z.enum(AGENT_STATUSES).optional(), board: z.string().optional() },
   }, async ({ agent_id, status, board }: { agent_id: string; status?: AgentStatus; board?: string }) => {
     const kv = await getKv();
@@ -342,6 +343,61 @@ function buildServer(queryBoard: string | undefined): McpServer {
       const card = await svc.releaseCard(kv, resolved.id, card_id, agent_id, reason);
       await implicitHeartbeat(kv, resolved.id, agent_id);
       return toolResult(card);
+    } catch (err) {
+      return errorFrom(err);
+    }
+  });
+
+  server.registerTool("send_message", {
+    description:
+      "Send a message to a specific agent (delivered to their inbox) or broadcast to the whole board (to: '*'). Use this before assuming anything about a card another agent holds — e.g. an interface change that affects them.",
+    inputSchema: {
+      board: z.string().optional(),
+      from: z.string(),
+      to: z.string(),
+      body: z.string(),
+      card_id: z.string().optional(),
+    },
+  }, async (
+    { board, from, to, body, card_id }: { board?: string; from: string; to: string; body: string; card_id?: string },
+  ) => {
+    const kv = await getKv();
+    try {
+      const resolved = await resolveBoardForCall(kv, queryBoard, board, from);
+      const message = await svc.sendMessage(kv, resolved.id, { from, to, body, cardId: card_id });
+      await implicitHeartbeat(kv, resolved.id, from);
+      return toolResult(message);
+    } catch (err) {
+      return errorFrom(err);
+    }
+  });
+
+  server.registerTool("check_messages", {
+    description: "Drain your inbox and pull any new broadcasts since you last checked. Returns messages oldest-first. Call at natural checkpoints (after claiming, after progress updates).",
+    inputSchema: { board: z.string().optional(), agent_id: z.string() },
+  }, async ({ board, agent_id }: { board?: string; agent_id: string }) => {
+    const kv = await getKv();
+    try {
+      const resolved = await resolveBoardForCall(kv, queryBoard, board, agent_id);
+      const messages = await svc.checkMessages(kv, resolved.id, agent_id);
+      await implicitHeartbeat(kv, resolved.id, agent_id);
+      return toolResult(messages);
+    } catch (err) {
+      return errorFrom(err);
+    }
+  });
+
+  server.registerTool("watch_events", {
+    description:
+      "Events on this board since your last watch_events call (or an explicit `since` event ID). Advances your cursor. Use this for general awareness — what other agents are doing.",
+    inputSchema: { board: z.string().optional(), agent_id: z.string(), since: z.string().optional() },
+  }, async ({ board, agent_id, since }: { board?: string; agent_id: string; since?: string }) => {
+    const kv = await getKv();
+    try {
+      const resolved = await resolveBoardForCall(kv, queryBoard, board, agent_id);
+      const events = await svc.watchEvents(kv, resolved.id, agent_id, since);
+      await implicitHeartbeat(kv, resolved.id, agent_id);
+      return toolResult(events);
     } catch (err) {
       return errorFrom(err);
     }
