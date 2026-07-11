@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run -A \"$CLAUDE_PROJECT_DIR/tools/board-hook.ts\" session-start"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run -A \"$CLAUDE_PROJECT_DIR/tools/board-hook.ts\" prompt-submit"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run -A \"$CLAUDE_PROJECT_DIR/tools/board-hook.ts\" post-tool-use"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run -A \"$CLAUDE_PROJECT_DIR/tools/board-hook.ts\" session-end"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "board": {
+      "type": "http",
+      "url": "http://localhost:8000/api/orchestration/mcp?board=ai-multiagents"
+    }
+  }
+}
