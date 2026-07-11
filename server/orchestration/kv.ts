@@ -40,6 +40,11 @@ export const keys = {
   agent: (boardId: string, agentId: string) => ["agents", boardId, agentId] as const,
   agentsPrefix: (boardId: string) => ["agents", boardId] as const,
   agentByName: (boardId: string, name: string) => ["idx", boardId, "agents_by_name", name] as const,
+  // Deliberately global (not board-prefixed) — a pure routing pointer, not
+  // board data, so an MCP tool call carrying only an agent_id (no board arg)
+  // can resolve "which board is this agent on" in one lookup. See plan
+  // section 5's board-resolution order.
+  agentBoardIndex: (agentId: string) => ["idx", "agent_id_to_board", agentId] as const,
 
   inbox: (boardId: string, agentId: string, messageId: string) => ["inbox", boardId, agentId, messageId] as const,
   inboxPrefix: (boardId: string, agentId: string) => ["inbox", boardId, agentId] as const,

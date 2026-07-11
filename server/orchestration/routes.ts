@@ -11,6 +11,7 @@
 
 import { Hono } from "jsr:@hono/hono";
 import { getKv } from "./kv.ts";
+import { mcpFetch } from "./mcp.ts";
 import {
   archiveBoard,
   claimCard,
@@ -21,7 +22,7 @@ import {
   getCard,
   heartbeat,
   listAgents,
-  listBoards,
+  listBoardSummaries,
   listCards,
   listEvents,
   moveCard,
@@ -61,6 +62,15 @@ function parseStringArray(value: unknown): string[] | undefined {
 
 const CARD_STATUSES: CardStatus[] = ["backlog", "ready", "in_progress", "review", "done", "blocked"];
 
+// MCP Streamable HTTP endpoint (plan section 5) — a repo's .mcp.json points
+// here with its own ?board=<slug>, e.g.
+// http://localhost:PORT/api/orchestration/mcp?board=egg-hunt. Handles
+// GET (SSE stream), POST (JSON-RPC calls), and DELETE (session teardown) —
+// mcp.ts creates a fresh stateless server+transport per request.
+orchestrationApp.all("/mcp", async (c) => {
+  return await mcpFetch(c.req.raw, c.req.query("board") || undefined);
+});
+
 // Resolves :board (slug or ULID) once per request and 404s cleanly if it
 // doesn't exist, so every handler below can assume `board` is real.
 orchestrationApp.use("/boards/:board/*", async (c, next) => {
@@ -87,15 +97,7 @@ orchestrationApp.post("/boards", async (c) => {
 
 orchestrationApp.get("/boards", async (c) => {
   const kv = await getKv();
-  const boards = await listBoards(kv);
-  // Counts are cheap enough at M1 scale to compute per-request; revisit if
-  // board/card volume ever makes this worth caching.
-  const withCounts = await Promise.all(boards.map(async (board) => {
-    const cards = await listCards(kv, board.id);
-    const openCount = cards.filter((c) => c.status !== "done").length;
-    return { ...board, openCardCount: openCount, cardCount: cards.length };
-  }));
-  return c.json(withCounts);
+  return c.json(await listBoardSummaries(kv));
 });
 
 orchestrationApp.get("/boards/:board", (c) => {

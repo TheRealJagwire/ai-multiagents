@@ -563,12 +563,21 @@ export async function registerAgent(
       .check(nameEntry)
       .set(keys.agent(boardId, agent.id), agent)
       .set(nameKey, agent.id)
+      .set(keys.agentBoardIndex(agent.id), boardId)
       .set(keys.event(boardId, event.id), event)
       .commit();
     if (res.ok) return agent;
     // Lost the race for this name — next attempt finds it taken and upserts.
   }
   throw new Error(`register agent ${input.name} conflicted too many times`);
+}
+
+// Global reverse lookup ("which board is this agent on") — the MCP layer
+// (M3) uses this to resolve a board from a bare agent_id when the tool call
+// doesn't carry an explicit board argument. Not board-scoped by design.
+export async function getAgentBoardId(kv: Deno.Kv, agentId: string): Promise<string | null> {
+  const entry = await kv.get<string>(keys.agentBoardIndex(agentId));
+  return entry.value;
 }
 
 // "Any progress update or heartbeat from the assignee extends the lease"
@@ -708,4 +717,48 @@ export function startReaper(kv: Deno.Kv): void {
   };
   tick();
   reaperTimer = setInterval(tick, REAPER_TICK_MS);
+}
+
+// ---------- Summaries (shared by REST's board list and MCP's list_boards/get_board_status) ----------
+
+export interface BoardSummary extends Board {
+  cardCount: number;
+  openCardCount: number;
+  activeAgentCount: number;
+}
+
+export async function listBoardSummaries(kv: Deno.Kv): Promise<BoardSummary[]> {
+  const boards = await listBoards(kv);
+  return await Promise.all(boards.map(async (board) => {
+    const [cards, agents] = await Promise.all([listCards(kv, board.id), listAgents(kv, board.id)]);
+    return {
+      ...board,
+      cardCount: cards.length,
+      openCardCount: cards.filter((c) => c.status !== "done").length,
+      activeAgentCount: agents.filter((a) => a.status !== "offline").length,
+    };
+  }));
+}
+
+export interface BoardStatus {
+  board: Board;
+  columns: Record<CardStatus, number>;
+  totalAgents: number;
+  activeAgents: number;
+  queueDepth: number; // "ready" count — claimable right now
+}
+
+export async function getBoardStatus(kv: Deno.Kv, boardId: string): Promise<BoardStatus> {
+  const board = await getBoardById(kv, boardId);
+  if (!board) throw new Error(`unknown board: ${boardId}`);
+  const [cards, agents] = await Promise.all([listCards(kv, boardId), listAgents(kv, boardId)]);
+  const columns: Record<CardStatus, number> = { backlog: 0, ready: 0, in_progress: 0, review: 0, done: 0, blocked: 0 };
+  for (const card of cards) columns[card.status]++;
+  return {
+    board,
+    columns,
+    totalAgents: agents.length,
+    activeAgents: agents.filter((a) => a.status !== "offline").length,
+    queueDepth: columns.ready,
+  };
 }
