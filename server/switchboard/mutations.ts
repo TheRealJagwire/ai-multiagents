@@ -72,3 +72,8 @@ export function pushSchedulesReplace(schedules: Schedule[]): void {
   state.schedules = schedules;
   publish("schedules-replaced", schedules);
 }
+
+export function pushCatchUpMissedSchedulesReplace(value: boolean): void {
+  state.catchUpMissedSchedules = value;
+  publish("catch-up-missed-schedules-replaced", value);
+}

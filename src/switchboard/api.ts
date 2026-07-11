@@ -17,6 +17,7 @@ export interface EventHandlers {
   onSessionRemoved: (id: string) => void;
   onMcpConfigsReplaced: (configs: McpConfig[]) => void;
   onSchedulesReplaced: (schedules: Schedule[]) => void;
+  onCatchUpMissedSchedulesReplaced: (value: boolean) => void;
   onConnectionChange: (connected: boolean) => void;
 }
 
@@ -93,6 +94,11 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
   source.addEventListener("schedules-replaced", (message) => {
     const schedules = JSON.parse((message as MessageEvent).data) as Schedule[];
     handlers.onSchedulesReplaced(schedules);
+  });
+
+  source.addEventListener("catch-up-missed-schedules-replaced", (message) => {
+    const value = JSON.parse((message as MessageEvent).data) as boolean;
+    handlers.onCatchUpMissedSchedulesReplaced(value);
   });
 
   return () => source.close();
@@ -250,4 +256,8 @@ export function createSchedule(body: Record<string, unknown>): Promise<void> {
 
 export function deleteSchedule(id: string): Promise<void> {
   return del(`/schedules/${id}`);
+}
+
+export function setCatchUpMissedSchedules(value: boolean): Promise<void> {
+  return put(`/settings`, { catchUpMissedSchedules: value });
 }

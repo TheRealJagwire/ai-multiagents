@@ -1,4 +1,5 @@
 import {
+  catchUpMissedSchedules,
   scheduleDeleteConfirm,
   scheduleError,
   scheduleMsgAt,
@@ -14,6 +15,7 @@ import {
   cancelDeleteSchedule,
   closeScheduledModal,
   confirmDeleteSchedule,
+  setCatchUpMissedSchedules,
   setScheduleMsgAt,
   setScheduleMsgSessionId,
   setScheduleMsgText,
@@ -38,6 +40,7 @@ const statusColors: Record<ScheduleStatus, { bg: string; text: string }> = {
   pending: { bg: "var(--sb-blue-tint)", text: "var(--sb-blue-dark)" },
   fired: { bg: "var(--sb-running-bg)", text: "var(--sb-running-text)" },
   failed: { bg: "var(--sb-error-bg)", text: "var(--sb-error-text)" },
+  skipped: { bg: "var(--sb-surface-3)", text: "var(--sb-text-4)" },
 };
 
 function ScheduleRow({ schedule }: { schedule: Schedule }) {
@@ -109,6 +112,7 @@ function ScheduleRow({ schedule }: { schedule: Schedule }) {
           {recurrenceLabel ? ` · ${recurrenceLabel}` : ""}
           {schedule.occurrenceCount > 0 ? ` · fired ${schedule.occurrenceCount}×` : ""}
           {schedule.status === "failed" && schedule.error ? ` — ${schedule.error}` : ""}
+          {schedule.status === "skipped" ? " — missed while the app was closed" : ""}
         </div>
       </div>
       {scheduleDeleteConfirm.value === schedule.id
@@ -217,6 +221,31 @@ export function ScheduledModal() {
         <div style={{ fontSize: 11.5, color: "var(--sb-text-4)", lineHeight: 1.5 }}>
           New sessions and teams schedule from the "New session"/"New team" form — pick your time there instead of
           starting right away. This is for scheduling a message to a session that's already running.
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            border: "1px solid var(--sb-border-2)",
+            borderRadius: 10,
+            padding: "10px 12px",
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={catchUpMissedSchedules.value}
+              onChange={(e) => setCatchUpMissedSchedules((e.target as HTMLInputElement).checked)}
+            />
+            Catch up on missed schedules when the app starts
+          </label>
+          <div style={{ fontSize: 11, color: "var(--sb-text-4)", marginLeft: 20 }}>
+            {catchUpMissedSchedules.value
+              ? "If a schedule was due while the app was closed, it fires as soon as the app opens."
+              : "If a schedule was due while the app was closed, a one-off is marked \"skipped\" and a repeating one just advances to its next occurrence — neither fires late."}
+          </div>
         </div>
 
         <div

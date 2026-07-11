@@ -19,7 +19,7 @@ import { approveArtifact, requestChanges } from "./review-actions.ts";
 import { revokeGrant } from "./grant-actions.ts";
 import { spawnFromBody, spawnIntoTeam, startWorkers } from "./spawn-actions.ts";
 import { addMcpConfig, deleteMcpConfig, updateMcpConfig } from "./mcp-actions.ts";
-import { createSchedule, deleteSchedule, startScheduler } from "./schedule-actions.ts";
+import { createSchedule, deleteSchedule, initSchedules, setCatchUpMissedSchedules, startScheduler } from "./schedule-actions.ts";
 import { listDirectories } from "./dir-listing.ts";
 import { undoAction } from "./undo.ts";
 import { EFFORTS, MODELS, parseEffort, parseModel, parseStringArray, parseStringRecord, parseTransport } from "./parse-body.ts";
@@ -249,6 +249,14 @@ switchboardApp.delete("/schedules/:id", (c) => {
   return c.body(null, 204);
 });
 
+switchboardApp.put("/settings", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  if (typeof body.catchUpMissedSchedules === "boolean") {
+    setCatchUpMissedSchedules(body.catchUpMissedSchedules);
+  }
+  return c.body(null, 204);
+});
+
 switchboardApp.post("/mcp-configs", async (c) => {
   const body = await readJsonBody(c.req.raw);
   addMcpConfig({
@@ -288,5 +296,8 @@ switchboardApp.post("/undo/:key", (c) => {
 });
 
 // routes.ts is imported exactly once, at server startup (main.ts) — this
-// boots the schedule poller alongside it.
+// top-level await means main.ts's Deno.serve only starts accepting
+// requests after persisted schedules are loaded, so GET /snapshot never
+// races an empty-then-populated window.
+await initSchedules();
 startScheduler();

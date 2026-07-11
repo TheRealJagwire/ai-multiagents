@@ -38,6 +38,7 @@ export const grants = signal<Grant[]>([]);
 export const transcripts = signal<Record<string, TranscriptMessage[]>>({});
 export const mcpConfigs = signal<McpConfig[]>([]);
 export const schedules = signal<Schedule[]>([]);
+export const catchUpMissedSchedules = signal(false);
 
 // UI state
 export const activeTab = signal<Tab>("feed");

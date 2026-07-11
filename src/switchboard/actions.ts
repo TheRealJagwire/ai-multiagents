@@ -3,6 +3,7 @@ import {
   activeFilter,
   type ActivityFilter,
   activeTab,
+  catchUpMissedSchedules,
   chatDrafts,
   confirmStop,
   connected,
@@ -110,6 +111,7 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   transcripts.value = snapshot.transcripts;
   mcpConfigs.value = snapshot.mcpConfigs;
   schedules.value = snapshot.schedules;
+  catchUpMissedSchedules.value = snapshot.catchUpMissedSchedules;
 }
 
 // The snapshot is otherwise only ever fetched once at mount — after a real
@@ -131,6 +133,21 @@ export function replaceMcpConfigs(configs: McpConfig[]): void {
 
 export function replaceSchedules(nextSchedules: Schedule[]): void {
   schedules.value = nextSchedules;
+}
+
+export function replaceCatchUpMissedSchedules(value: boolean): void {
+  catchUpMissedSchedules.value = value;
+}
+
+export async function setCatchUpMissedSchedules(value: boolean): Promise<void> {
+  const previous = catchUpMissedSchedules.value;
+  catchUpMissedSchedules.value = value;
+  try {
+    await api.setCatchUpMissedSchedules(value);
+  } catch (err) {
+    catchUpMissedSchedules.value = previous;
+    showErrorToast("Couldn't update setting", err);
+  }
 }
 
 export function ingestFeedEvent(event: FeedEvent): void {

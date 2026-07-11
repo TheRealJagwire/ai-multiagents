@@ -23,6 +23,7 @@ import {
   patchSession,
   removeGrant,
   removeSessionLocally,
+  replaceCatchUpMissedSchedules,
   replaceMcpConfigs,
   replaceSchedules,
   replaceTeams,
@@ -83,6 +84,7 @@ export function App() {
         onSessionRemoved: removeSessionLocally,
         onMcpConfigsReplaced: replaceMcpConfigs,
         onSchedulesReplaced: replaceSchedules,
+        onCatchUpMissedSchedulesReplaced: replaceCatchUpMissedSchedules,
         onConnectionChange: handleConnectionChange,
       });
     });

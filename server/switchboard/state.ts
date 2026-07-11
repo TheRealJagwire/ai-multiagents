@@ -8,6 +8,7 @@ export const state: Snapshot = {
   transcripts: {},
   mcpConfigs: [],
   schedules: [],
+  catchUpMissedSchedules: false,
 };
 
 let counter = 0;

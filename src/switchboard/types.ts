@@ -127,7 +127,11 @@ export interface Grant {
   grantedAt: number;
 }
 
-export type ScheduleStatus = "pending" | "fired" | "failed";
+// "skipped" is a one-shot schedule that came due while the app wasn't
+// running and the user opted out of startup catch-up — see
+// `catchUpMissedSchedules` on Snapshot. A recurring schedule never gets
+// this status; it just silently advances to its next future occurrence.
+export type ScheduleStatus = "pending" | "fired" | "failed" | "skipped";
 
 // A spawn payload carries the exact body shape POST /sessions accepts for
 // mode "new" or "solo" — the scheduler fires it through the same
@@ -202,4 +206,10 @@ export interface Snapshot {
   transcripts: Record<string, TranscriptMessage[]>;
   mcpConfigs: McpConfig[];
   schedules: Schedule[];
+  // Opt-in: whether a schedule that came due while the app was closed
+  // should fire immediately on the next launch. Defaults to false — a
+  // missed one-shot schedule is marked "skipped" instead of firing late,
+  // and a missed recurring schedule silently advances to its next future
+  // occurrence rather than firing for the time it missed.
+  catchUpMissedSchedules: boolean;
 }
