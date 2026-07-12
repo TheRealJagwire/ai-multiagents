@@ -1,6 +1,6 @@
 # ai-multiagents
 
-Deno desktop app: Switchboard (agent-session supervisor UI, `src/` + `server/switchboard/`) plus a headless orchestration server (`server/orchestration/`) — a multi-board Kanban store with an MCP surface for coordinating multiple Claude Code sessions. Architecture: `README.md`. Orchestration design + build order: `agent-kanban-orchestration-plan-v2-1.md`.
+Deno desktop app: Switchboard (agent-session supervisor UI, `src/` + `server/switchboard/`) plus a headless orchestration server (`server/orchestration/`) — a multi-board Kanban store with an MCP surface for coordinating multiple Claude Code sessions. Architecture: `README.md`. Orchestration design + build order: `agent-kanban-orchestration-plan-v2-1.md` (all milestones M1–M6 implemented).
 
 Run the server: `deno task build` once (frontend), then `deno run -A main.ts` → `http://localhost:8000` (`deno.json` already enables unstable KV). Orchestration REST lives under `/api/orchestration`, the MCP endpoint at `/api/orchestration/mcp?board=<slug>` (this repo's board slug: `ai-multiagents`, wired in `.mcp.json` as server name `board`). Tests: `deno test -A server/`.
 
