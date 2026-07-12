@@ -1,6 +1,7 @@
 import { computed, signal } from "@preact/signals";
 import type {
   Effort,
+  EventKind,
   FeedEvent,
   Grant,
   McpConfig,
@@ -21,7 +22,7 @@ export interface DraftMember {
   effort: Effort;
 }
 
-export type ActivityFilter = "all" | "unread" | "artifacts" | "errors";
+export type ActivityFilter = "all" | "unread";
 export type Tab = "feed" | "sessions" | "teams";
 
 export interface RailGroup {
@@ -49,6 +50,24 @@ export const now = signal<number>(Date.now());
 export const lastSeen = signal<number>(Date.now());
 export const pinnedShowAll = signal(false);
 export const activeFilter = signal<ActivityFilter>("all");
+
+// Multi-select kind filter: empty = no filtering (show every kind); a
+// non-empty selection shows only those kinds. Selection survives reloads —
+// a filter you set up is a working context, not a per-visit whim.
+export const ALL_EVENT_KINDS: EventKind[] = ["info", "message", "artifact", "approval", "error", "review"];
+export const KIND_FILTER_KEY = "switchboard.kindFilter";
+
+function loadKindFilter(): EventKind[] {
+  try {
+    const raw = localStorage.getItem(KIND_FILTER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((k): k is EventKind => (ALL_EVENT_KINDS as string[]).includes(k)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export const kindFilter = signal<EventKind[]>(loadKindFilter());
 export const searchQuery = signal("");
 export const sessionFilter = signal<string | null>(null);
 export const digestDismissed = signal(false);
@@ -203,10 +222,11 @@ export const filteredStream = computed<FeedEvent[]>(() => {
 
   if (activeFilter.value === "unread") {
     list = list.filter((e) => e.ts > lastSeen.value && !e.own);
-  } else if (activeFilter.value === "artifacts") {
-    list = list.filter((e) => e.kind === "artifact" || e.kind === "review");
-  } else if (activeFilter.value === "errors") {
-    list = list.filter((e) => e.kind === "error");
+  }
+
+  if (kindFilter.value.length > 0) {
+    const selected = new Set(kindFilter.value);
+    list = list.filter((e) => selected.has(e.kind));
   }
 
   const query = searchQuery.value.trim().toLowerCase();

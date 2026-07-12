@@ -2,6 +2,7 @@ import { Hono } from "jsr:@hono/hono";
 import { streamSSE } from "jsr:@hono/hono/streaming";
 import type { Effort, Model, Recurrence, RecurrenceUnit, Snapshot } from "../../src/switchboard/types.ts";
 import { state } from "./state.ts";
+import { initPersistedState } from "./state-store.ts";
 import { subscribe } from "./bus.ts";
 import { applyAltFix, approveEvent, denyEvent, retryEvent } from "./resolutions.ts";
 import { deleteSession, sendMessage, stopSession, togglePause } from "./session-actions.ts";
@@ -295,9 +296,11 @@ switchboardApp.post("/undo/:key", (c) => {
   return c.body(null, 204);
 });
 
-// routes.ts is imported exactly once, at server startup (main.ts) — this
-// top-level await means main.ts's Deno.serve only starts accepting
-// requests after persisted schedules are loaded, so GET /snapshot never
-// races an empty-then-populated window.
+// routes.ts is imported exactly once, at server startup (main.ts) — these
+// top-level awaits mean main.ts's Deno.serve only starts accepting
+// requests after persisted state and schedules are loaded, so GET
+// /snapshot never races an empty-then-populated window. State restores
+// first: schedule reconciliation may reference restored sessions by id.
+await initPersistedState();
 await initSchedules();
 startScheduler();

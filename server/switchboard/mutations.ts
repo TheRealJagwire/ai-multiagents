@@ -1,10 +1,12 @@
 import type { EventResolution, FeedEvent, Grant, McpConfig, Schedule, Session, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
 import { findEvent, findSession, nextId, state } from "./state.ts";
 import { publish } from "./bus.ts";
+import { persistStateSoon } from "./state-store.ts";
 
 export function appendEvent(event: FeedEvent): void {
   state.events = [event, ...state.events];
   publish("feed-event", event);
+  persistStateSoon();
 }
 
 type NewFeedEvent = Omit<FeedEvent, "id" | "ts" | "resolved"> & Partial<Pick<FeedEvent, "resolved">>;
@@ -18,54 +20,64 @@ export function pushFeedEvent(partial: NewFeedEvent): FeedEvent {
 export function pushSessionPatch(sid: string, patch: Partial<Session>): void {
   Object.assign(findSession(sid), patch);
   publish("session-patch", { id: sid, patch });
+  persistStateSoon();
 }
 
 export function resolveEvent(id: string, resolution: EventResolution): void {
   const event = findEvent(id);
   event.resolved = resolution;
   publish("event-patch", { id, patch: { resolved: resolution } });
+  persistStateSoon();
 }
 
 export function addGrant(sid: string, pattern: string): Grant {
   const grant: Grant = { id: nextId("g"), sid, pattern, grantedAt: Date.now() };
   state.grants = [...state.grants, grant];
   publish("grant-added", grant);
+  persistStateSoon();
   return grant;
 }
 
 export function pushTranscriptMessage(sid: string, message: TranscriptMessage): void {
   state.transcripts[sid] = [...(state.transcripts[sid] ?? []), message];
   publish("transcript-message", { sid, message });
+  persistStateSoon();
 }
 
 export function pushTeamsReplace(teams: Team[]): void {
   state.teams = teams;
   publish("teams-replaced", teams);
+  persistStateSoon();
 }
 
 export function removeGrant(id: string): void {
   state.grants = state.grants.filter((g) => g.id !== id);
   publish("grant-revoked", { id });
+  persistStateSoon();
 }
 
 export function restoreGrant(grant: Grant): void {
   state.grants = [...state.grants, grant];
   publish("grant-added", grant);
+  persistStateSoon();
 }
 
 export function pushSessionAdd(session: Session): void {
   state.sessions = [...state.sessions, session];
   publish("session-added", session);
+  persistStateSoon();
 }
 
 export function pushSessionRemove(id: string): void {
   state.sessions = state.sessions.filter((s) => s.id !== id);
   publish("session-removed", { id });
+  persistStateSoon();
 }
 
 export function pushMcpConfigsReplace(configs: McpConfig[]): void {
   state.mcpConfigs = configs;
   publish("mcp-configs-replaced", configs);
+  persistStateSoon();
 }
 
 export function pushSchedulesReplace(schedules: Schedule[]): void {

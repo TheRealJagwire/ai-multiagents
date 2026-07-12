@@ -134,14 +134,14 @@ These are known, deliberate gaps — not oversights — made explicit rather tha
 - **No artifact review implementation.** The review modal UI exists but has nothing to open — there's no output-file/review-gate concept wired up from the CLI's file writes yet.
 - **Teams share no live context.** Sequenced/autonomous modes give a lead real control over *when and with what task* workers spawn, but teammates still don't see each other's transcripts — coordination flows through the task spec, git history, or (opt-in) the orchestration board, not shared memory.
 - **No milestone/progress tracking.** `msDone`/`msTotal` are static placeholders (`msTotal: 4`, never incremented).
-- **No session persistence.** Sessions, teams, and transcripts are in-memory; restarting the backend loses the local session list (schedules and settings do persist — see Backend above).
+- **Live processes don't survive a restart.** All state (sessions, teams, feed, transcripts, grants, MCP configs) now persists to `state.json` and is restored on launch — but each session's `claude` subprocess dies with the app, so previously-running sessions come back as `stopped` with their history intact and an explanatory transcript note, not as live processes. Reconnecting them via the SDK's `resume` option is the remaining gap.
 - **Effort changes aren't possible mid-session.** Model changes are wired up via `Query.setModel()`, but the Agent SDK has no equivalent for effort.
 
 ## Next steps
 
 Roughly in priority order:
 
-1. **Session persistence** — move `state.ts` off in-memory storage (SQLite would be a natural fit for a single-user desktop app), and use the SDK's `resume`/`sessionId` options to reconnect to still-running sessions after a backend restart instead of losing them. (Schedules and settings already persist; the orchestration server's board state already lives in Deno KV.)
+1. **Live session resume** — state now survives restarts (`state-store.ts`); the remaining piece is capturing each session's SDK session id and reconnecting via `query({ options: { resume } })` on launch, so a restart continues sessions instead of restoring them as stopped.
 2. **Board UI in Switchboard** — the orchestration server is headless; render boards, cards, agents, and the event stream in the desktop app (same APIs, plus rendering). The plan calls the queue-watching supervisor script "the seed of the visual orchestrator."
 3. **Claim fairness on the board** — a fast worker can drain the whole ready queue before a slower-starting one boots; a max-cards-per-agent or round-robin knob would keep multi-worker runs genuinely parallel.
 4. **Configurable agent setup** — let a spawn specify a different system prompt or tool restriction instead of always using the one shared `WORKER_SYSTEM_PROMPT`.

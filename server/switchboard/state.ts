@@ -17,6 +17,16 @@ export function nextId(prefix: string): string {
   return `${prefix}-${counter}`;
 }
 
+// state-store.ts persists the counter alongside the records so ids minted
+// after a restart can never collide with restored ones.
+export function idCounter(): number {
+  return counter;
+}
+
+export function setIdCounter(value: number): void {
+  counter = value;
+}
+
 export function findSession(id: string): Session {
   const session = state.sessions.find((s) => s.id === id);
   if (!session) throw new Error(`Unknown session id: ${id}`);

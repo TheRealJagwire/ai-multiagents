@@ -2,6 +2,8 @@ import * as api from "./api.ts";
 import {
   activeFilter,
   type ActivityFilter,
+  KIND_FILTER_KEY,
+  kindFilter,
   activeTab,
   catchUpMissedSchedules,
   chatDrafts,
@@ -89,6 +91,7 @@ import {
 } from "./store.ts";
 import type {
   Effort,
+  EventKind,
   FeedEvent,
   Grant,
   McpConfig,
@@ -190,6 +193,26 @@ export function removeSessionLocally(id: string): void {
 
 export function setFilter(filter: ActivityFilter): void {
   activeFilter.value = filter;
+}
+
+function saveKindFilter(kinds: EventKind[]): void {
+  try {
+    localStorage.setItem(KIND_FILTER_KEY, JSON.stringify(kinds));
+  } catch {
+    // Storage full/unavailable — the filter still works for this visit.
+  }
+}
+
+export function toggleKindFilter(kind: EventKind): void {
+  const current = kindFilter.value;
+  const next = current.includes(kind) ? current.filter((k) => k !== kind) : [...current, kind];
+  kindFilter.value = next;
+  saveKindFilter(next);
+}
+
+export function clearKindFilter(): void {
+  kindFilter.value = [];
+  saveKindFilter([]);
 }
 
 export function setSearchQuery(query: string): void {

@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { activeFilter, feedWindowSize, filteredStream, lastSeen, sessionFilter, sessions } from "../store.ts";
+import { activeFilter, feedWindowSize, filteredStream, kindFilter, lastSeen, sessionFilter, sessions } from "../store.ts";
 import { expandFeedWindow, openSpawnModal } from "../actions.ts";
 import { PinnedBlock } from "./PinnedBlock.tsx";
 import { ActivityHeader } from "./ActivityHeader.tsx";
@@ -15,7 +15,7 @@ export function FeedView() {
   const stream = filteredStream.value;
   const windowed = stream.slice(0, feedWindowSize.value);
   const hiddenCount = stream.length - windowed.length;
-  const unfiltered = !sessionFilter.value && activeFilter.value === "all";
+  const unfiltered = !sessionFilter.value && activeFilter.value === "all" && kindFilter.value.length === 0;
   const dividerIndex = unfiltered ? windowed.findIndex((e) => e.ts <= lastSeen.value) : -1;
 
   const nodes: ComponentChildren[] = [];

@@ -1,12 +1,29 @@
-import { activeFilter, type ActivityFilter, searchQuery, sessionFilter, sessionsById, unreadCount } from "../store.ts";
-import { markCaughtUp, setFilter, setSearchQuery, setSessionFilter } from "../actions.ts";
+import type { EventKind } from "../types.ts";
+import {
+  activeFilter,
+  type ActivityFilter,
+  ALL_EVENT_KINDS,
+  kindFilter,
+  searchQuery,
+  sessionFilter,
+  sessionsById,
+  unreadCount,
+} from "../store.ts";
+import { clearKindFilter, markCaughtUp, setFilter, setSearchQuery, setSessionFilter, toggleKindFilter } from "../actions.ts";
 
 const filters: { id: ActivityFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "unread", label: "Unread" },
-  { id: "artifacts", label: "Artifacts" },
-  { id: "errors", label: "Errors" },
 ];
+
+const kindLabels: Record<EventKind, string> = {
+  info: "Info",
+  message: "Messages",
+  artifact: "Artifacts",
+  approval: "Approvals",
+  error: "Errors",
+  review: "Reviews",
+};
 
 export function ActivityHeader() {
   const filteredSession = sessionFilter.value ? sessionsById.value.get(sessionFilter.value) : undefined;
@@ -86,6 +103,44 @@ export function ActivityHeader() {
             {f.id === "unread" && unreadCount.value > 0 ? ` · ${unreadCount.value}` : ""}
           </button>
         ))}
+      </div>
+
+      {/* Kind chips are multi-select: none selected = everything shows;
+          picking one or more narrows the feed to just those kinds. */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }} role="group" aria-label="Filter by kind">
+        {ALL_EVENT_KINDS.map((kind) => {
+          const selected = kindFilter.value.includes(kind);
+          return (
+            <button
+              type="button"
+              key={kind}
+              onClick={() => toggleKindFilter(kind)}
+              aria-pressed={selected}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "5px 10px",
+                borderRadius: "var(--sb-radius-pill)",
+                cursor: "pointer",
+                background: selected ? "var(--sb-blue)" : "transparent",
+                color: selected ? "var(--sb-on-primary)" : "var(--sb-text-3)",
+                border: selected ? "none" : "1px solid var(--sb-border-3)",
+              }}
+            >
+              {kindLabels[kind]}
+            </button>
+          );
+        })}
+        {kindFilter.value.length > 0 && (
+          <button
+            type="button"
+            onClick={clearKindFilter}
+            aria-label="Clear kind filters"
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--sb-blue)", cursor: "pointer" }}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {unreadCount.value > 0 && (
