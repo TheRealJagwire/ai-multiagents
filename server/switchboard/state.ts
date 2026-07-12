@@ -9,6 +9,8 @@ export const state: Snapshot = {
   mcpConfigs: [],
   schedules: [],
   catchUpMissedSchedules: false,
+  apiKeyConfigured: false,
+  apiKeyTail: null,
 };
 
 let counter = 0;

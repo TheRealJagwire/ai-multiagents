@@ -2,8 +2,14 @@ import * as api from "./api.ts";
 import {
   activeFilter,
   type ActivityFilter,
+  apiKeyConfigured,
+  apiKeyDraft,
+  apiKeyError,
+  apiKeySaving,
+  apiKeyTail,
   KIND_FILTER_KEY,
   kindFilter,
+  settingsModalOpen,
   activeTab,
   catchUpMissedSchedules,
   chatDrafts,
@@ -115,6 +121,8 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   mcpConfigs.value = snapshot.mcpConfigs;
   schedules.value = snapshot.schedules;
   catchUpMissedSchedules.value = snapshot.catchUpMissedSchedules;
+  apiKeyConfigured.value = snapshot.apiKeyConfigured;
+  apiKeyTail.value = snapshot.apiKeyTail;
 }
 
 // The snapshot is otherwise only ever fetched once at mount — after a real
@@ -140,6 +148,51 @@ export function replaceSchedules(nextSchedules: Schedule[]): void {
 
 export function replaceCatchUpMissedSchedules(value: boolean): void {
   catchUpMissedSchedules.value = value;
+}
+
+export function replaceApiKeyStatus(configured: boolean, tail: string | null): void {
+  apiKeyConfigured.value = configured;
+  apiKeyTail.value = tail;
+}
+
+export function openSettingsModal(): void {
+  apiKeyDraft.value = "";
+  apiKeyError.value = null;
+  settingsModalOpen.value = true;
+}
+
+export function closeSettingsModal(): void {
+  settingsModalOpen.value = false;
+  // Never keep key material around after the modal closes.
+  apiKeyDraft.value = "";
+  apiKeyError.value = null;
+}
+
+export async function saveApiKey(): Promise<void> {
+  apiKeySaving.value = true;
+  apiKeyError.value = null;
+  try {
+    await api.setApiKey(apiKeyDraft.value);
+    apiKeyDraft.value = "";
+    showToast("API key saved — applies to newly spawned sessions");
+  } catch (err) {
+    apiKeyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    apiKeySaving.value = false;
+  }
+}
+
+export async function clearApiKey(): Promise<void> {
+  apiKeySaving.value = true;
+  apiKeyError.value = null;
+  try {
+    await api.clearApiKey();
+    showToast("API key removed — sessions fall back to claude login");
+  } catch (err) {
+    apiKeyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    apiKeySaving.value = false;
+  }
 }
 
 export async function setCatchUpMissedSchedules(value: boolean): Promise<void> {

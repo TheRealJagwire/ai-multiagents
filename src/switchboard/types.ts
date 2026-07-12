@@ -212,4 +212,9 @@ export interface Snapshot {
   // and a missed recurring schedule silently advances to its next future
   // occurrence rather than firing for the time it missed.
   catchUpMissedSchedules: boolean;
+  // In-app Anthropic API key status. Only status — the key itself never
+  // leaves the server. Tail is the last few characters, for "which key is
+  // this" display.
+  apiKeyConfigured: boolean;
+  apiKeyTail: string | null;
 }

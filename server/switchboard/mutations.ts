@@ -89,3 +89,11 @@ export function pushCatchUpMissedSchedulesReplace(value: boolean): void {
   state.catchUpMissedSchedules = value;
   publish("catch-up-missed-schedules-replaced", value);
 }
+
+// Status only — the key itself lives in settings-store/Deno.env and is
+// never pushed through the bus or persisted by state-store.
+export function pushApiKeyStatusReplace(configured: boolean, tail: string | null): void {
+  state.apiKeyConfigured = configured;
+  state.apiKeyTail = tail;
+  publish("api-key-status-replaced", { configured, tail });
+}

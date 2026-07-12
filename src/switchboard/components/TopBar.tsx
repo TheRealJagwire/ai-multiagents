@@ -1,5 +1,5 @@
 import { activeTab, grants, needsYouCount, pendingScheduleCount, runningCount, type Tab, theme, type ThemeMode } from "../store.ts";
-import { goToPinned, openMcpModal, openScheduledModal, openSpawnModal, setActiveTab, setTheme, toggleGrantsPopover } from "../actions.ts";
+import { goToPinned, openMcpModal, openScheduledModal, openSettingsModal, openSpawnModal, setActiveTab, setTheme, toggleGrantsPopover } from "../actions.ts";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "feed", label: "Feed" },
@@ -100,6 +100,23 @@ export function TopBar() {
         }}
       >
         {THEME_ICON[theme.value]}
+      </button>
+
+      <button
+        type="button"
+        onClick={openSettingsModal}
+        aria-label="Settings"
+        title="Settings"
+        style={{
+          padding: "6px 10px",
+          border: "1px solid var(--sb-border-3)",
+          borderRadius: 8,
+          fontSize: 12.5,
+          color: "var(--sb-text-3)",
+          cursor: "pointer",
+        }}
+      >
+        ⚙
       </button>
 
       <button

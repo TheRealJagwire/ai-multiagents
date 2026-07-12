@@ -18,6 +18,7 @@ export interface EventHandlers {
   onMcpConfigsReplaced: (configs: McpConfig[]) => void;
   onSchedulesReplaced: (schedules: Schedule[]) => void;
   onCatchUpMissedSchedulesReplaced: (value: boolean) => void;
+  onApiKeyStatusReplaced: (configured: boolean, tail: string | null) => void;
   onConnectionChange: (connected: boolean) => void;
 }
 
@@ -99,6 +100,11 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
   source.addEventListener("catch-up-missed-schedules-replaced", (message) => {
     const value = JSON.parse((message as MessageEvent).data) as boolean;
     handlers.onCatchUpMissedSchedulesReplaced(value);
+  });
+
+  source.addEventListener("api-key-status-replaced", (message) => {
+    const { configured, tail } = JSON.parse((message as MessageEvent).data) as { configured: boolean; tail: string | null };
+    handlers.onApiKeyStatusReplaced(configured, tail);
   });
 
   return () => source.close();
@@ -260,4 +266,12 @@ export function deleteSchedule(id: string): Promise<void> {
 
 export function setCatchUpMissedSchedules(value: boolean): Promise<void> {
   return put(`/settings`, { catchUpMissedSchedules: value });
+}
+
+export function setApiKey(key: string): Promise<void> {
+  return post(`/settings/api-key`, { key });
+}
+
+export function clearApiKey(): Promise<void> {
+  return del(`/settings/api-key`);
 }

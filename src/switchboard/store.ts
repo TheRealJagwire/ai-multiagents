@@ -40,6 +40,9 @@ export const transcripts = signal<Record<string, TranscriptMessage[]>>({});
 export const mcpConfigs = signal<McpConfig[]>([]);
 export const schedules = signal<Schedule[]>([]);
 export const catchUpMissedSchedules = signal(false);
+// Status only — the key itself never reaches the frontend.
+export const apiKeyConfigured = signal(false);
+export const apiKeyTail = signal<string | null>(null);
 
 // UI state
 export const activeTab = signal<Tab>("feed");
@@ -175,6 +178,13 @@ export const mcpFormHeadersText = signal("");
 // branches add-vs-update off this rather than taking a separate parameter.
 export const mcpEditingId = signal<string | null>(null);
 export const mcpDeleteConfirm = signal<string | null>(null);
+
+// Settings modal (gear in the TopBar) — currently just the Anthropic API
+// key. The draft is write-only: it's never prefilled from the server.
+export const settingsModalOpen = signal(false);
+export const apiKeyDraft = signal("");
+export const apiKeySaving = signal(false);
+export const apiKeyError = signal<string | null>(null);
 
 // Scheduled items modal — lists what's pending plus a small form to
 // schedule a message to an already-running session (scheduling a new

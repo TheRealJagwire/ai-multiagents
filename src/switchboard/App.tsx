@@ -12,6 +12,7 @@ import {
   closeMcpModal,
   closeReview,
   closeScheduledModal,
+  closeSettingsModal,
   closeSession,
   closeSpawnModal,
   denyEvent,
@@ -23,6 +24,7 @@ import {
   patchSession,
   removeGrant,
   removeSessionLocally,
+  replaceApiKeyStatus,
   replaceCatchUpMissedSchedules,
   replaceMcpConfigs,
   replaceSchedules,
@@ -44,6 +46,7 @@ import {
   pinnedSorted,
   reviewOpen,
   scheduledModalOpen,
+  settingsModalOpen,
   selectedSessionId,
   theme,
   unreadCount,
@@ -60,6 +63,7 @@ import { GrantsPopover } from "./components/GrantsPopover.tsx";
 import { SpawnModal } from "./components/SpawnModal.tsx";
 import { McpConfigsModal } from "./components/McpConfigsModal.tsx";
 import { ScheduledModal } from "./components/ScheduledModal.tsx";
+import { SettingsModal } from "./components/SettingsModal.tsx";
 import { KeyboardHelp } from "./components/KeyboardHelp.tsx";
 
 export function App() {
@@ -85,6 +89,7 @@ export function App() {
         onMcpConfigsReplaced: replaceMcpConfigs,
         onSchedulesReplaced: replaceSchedules,
         onCatchUpMissedSchedulesReplaced: replaceCatchUpMissedSchedules,
+        onApiKeyStatusReplaced: replaceApiKeyStatus,
         onConnectionChange: handleConnectionChange,
       });
     });
@@ -119,6 +124,7 @@ export function App() {
         else if (reviewOpen.value !== null) closeReview();
         else if (modalOpen.value) closeSpawnModal();
         else if (mcpModalOpen.value) closeMcpModal();
+        else if (settingsModalOpen.value) closeSettingsModal();
         else if (scheduledModalOpen.value) closeScheduledModal();
         else if (grantsOpen.value) closeGrantsPopover();
         else if (selectedSessionId.value !== null) closeSession();
@@ -218,6 +224,7 @@ export function App() {
       <SpawnModal />
       <McpConfigsModal />
       <ScheduledModal />
+      <SettingsModal />
       <KeyboardHelp />
       <Toast />
     </div>

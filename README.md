@@ -25,17 +25,10 @@ This also pulls in the `@anthropic-ai/claude-agent-sdk` npm package, which drive
 
 ### 2. Authenticate
 
-If you've already run `claude login` on this machine, you're done — Switchboard's subprocess sessions inherit that login automatically. Otherwise, create `.env.local` in the project root (already gitignored):
+If you've already run `claude login` on this machine, you're done — Switchboard's subprocess sessions inherit that login automatically. Otherwise, pick either:
 
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Every command below that talks to Anthropic needs this sourced first (skip this if you're using `claude login`):
-
-```bash
-set -a; source .env.local; set +a
-```
+- **In-app (simplest):** launch the app and set your API key from the ⚙ Settings menu in the top bar. It's stored (owner-read-only) in the app-data dir, survives restarts, and applies to every session spawned afterward — no environment setup needed.
+- **Environment variable:** create `.env.local` in the project root (already gitignored) with `ANTHROPIC_API_KEY=sk-ant-...`, and source it before any command that talks to Anthropic: `set -a; source .env.local; set +a`. A key set in-app takes precedence over the environment at startup.
 
 ### 3. Build and run
 

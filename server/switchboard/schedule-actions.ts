@@ -4,7 +4,7 @@ import { pushCatchUpMissedSchedulesReplace, pushFeedEvent, pushSchedulesReplace 
 import { spawnFromBody } from "./spawn-actions.ts";
 import { sendMessage } from "./session-actions.ts";
 import { loadSchedulesFromDisk, saveSchedulesToDisk } from "./schedule-store.ts";
-import { loadSettingsFromDisk, saveSettingsToDisk } from "./settings-store.ts";
+import { loadSettingsFromDisk, updateSettings } from "./settings-store.ts";
 
 // Every mutation goes through here instead of pushSchedulesReplace directly,
 // so "update in-memory state" and "persist it" can never drift apart. The
@@ -164,7 +164,9 @@ function reconcileMissedSchedule(schedule: Schedule, now: number): Schedule {
 
 export function setCatchUpMissedSchedules(value: boolean): void {
   pushCatchUpMissedSchedulesReplace(value);
-  void saveSettingsToDisk({ catchUpMissedSchedules: value });
+  // Partial update, not a whole-object save — settings.json also holds
+  // fields this module doesn't own (e.g. the in-app API key).
+  void updateSettings({ catchUpMissedSchedules: value });
 }
 
 // Loads persisted schedules and the catch-up setting into state before the

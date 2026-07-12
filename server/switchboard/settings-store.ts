@@ -10,6 +10,12 @@ import { appDataDir } from "./app-data-dir.ts";
 
 export interface PersistedSettings {
   catchUpMissedSchedules: boolean;
+  // Set from the in-app settings menu. Optional — absent means "use
+  // whatever the environment provides" (claude login, or an inherited
+  // ANTHROPIC_API_KEY). Stored plaintext in the app-data dir with 0600
+  // file permissions; never sent to the frontend (only a configured
+  // flag + tail for display — see api-key-actions.ts).
+  anthropicApiKey?: string;
 }
 
 const DEFAULT_SETTINGS: PersistedSettings = { catchUpMissedSchedules: false };
@@ -26,6 +32,9 @@ export async function loadSettingsFromDisk(): Promise<PersistedSettings> {
       catchUpMissedSchedules: typeof v.catchUpMissedSchedules === "boolean"
         ? v.catchUpMissedSchedules
         : DEFAULT_SETTINGS.catchUpMissedSchedules,
+      ...(typeof v.anthropicApiKey === "string" && v.anthropicApiKey.length > 0
+        ? { anthropicApiKey: v.anthropicApiKey }
+        : {}),
     };
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) return DEFAULT_SETTINGS;
@@ -38,6 +47,13 @@ async function writeNow(settings: PersistedSettings): Promise<void> {
   await Deno.mkdir(dirname(SETTINGS_FILE), { recursive: true });
   const tmpFile = `${SETTINGS_FILE}.tmp-${crypto.randomUUID()}`;
   await Deno.writeTextFile(tmpFile, JSON.stringify(settings, null, 2));
+  // The file can hold an API key — owner-only before it lands at its
+  // final path. Windows has no POSIX modes; best-effort there.
+  try {
+    await Deno.chmod(tmpFile, 0o600);
+  } catch {
+    // chmod unsupported on this platform — proceed.
+  }
   await Deno.rename(tmpFile, SETTINGS_FILE);
 }
 
@@ -45,10 +61,23 @@ async function writeNow(settings: PersistedSettings): Promise<void> {
 // unserialized concurrent writes to the same file are unsafe.
 let writeChain: Promise<void> = Promise.resolve();
 
-export function saveSettingsToDisk(settings: PersistedSettings): Promise<void> {
-  const task = writeChain.then(() => writeNow(settings));
+// Read-modify-write for a single field, serialized on the same write chain
+// so two concurrent updates can't lose each other's fields. Callers that
+// used to save a whole hand-built object would silently wipe every field
+// they didn't know about (e.g. toggling catch-up erasing a stored API key)
+// — always go through this for partial updates. Pass `undefined` for a key
+// to delete it.
+export function updateSettings(partial: Partial<PersistedSettings>): Promise<void> {
+  const task = writeChain.then(async () => {
+    const current = await loadSettingsFromDisk();
+    const merged: PersistedSettings = { ...current, ...partial };
+    for (const [key, value] of Object.entries(partial)) {
+      if (value === undefined) delete merged[key as keyof PersistedSettings];
+    }
+    await writeNow(merged);
+  });
   writeChain = task.catch((err) => {
-    console.error(`[settings] failed to save ${SETTINGS_FILE}:`, err);
+    console.error(`[settings] failed to update ${SETTINGS_FILE}:`, err);
   });
   return task;
 }
