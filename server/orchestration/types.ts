@@ -9,6 +9,7 @@ export interface Board {
   description?: string;
   leaseMs?: number; // per-board override of claim lease duration
   heartbeatMs?: number; // per-board override of liveness threshold
+  eventRetentionMs?: number; // per-board override of event-log retention
   createdAt: number;
   archivedAt?: number; // archived boards are read-only and hidden from lists
 }
@@ -81,4 +82,9 @@ export interface BoardEvent {
 }
 
 export const DEFAULT_LEASE_MS = 10 * 60_000; // 10 minutes
-export const DEFAULT_HEARTBEAT_MS = 60_000; // 60 seconds
+// 120s (M6 tuning, was 60s): the M5 pilot showed real sessions go quiet for
+// several minutes between file edits (the PostToolUse heartbeat hook only
+// fires on Edit/Write), so a 60s * 3-miss threshold flapped agents offline
+// mid-run. 120s * 3 = 6 min still sits comfortably under the 10 min lease.
+export const DEFAULT_HEARTBEAT_MS = 120_000;
+export const DEFAULT_EVENT_RETENTION_MS = 7 * 24 * 60 * 60_000; // 7 days

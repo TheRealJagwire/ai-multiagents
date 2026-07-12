@@ -17,6 +17,7 @@ import {
   type BoardEvent,
   type Card,
   type CardStatus,
+  DEFAULT_EVENT_RETENTION_MS,
   DEFAULT_HEARTBEAT_MS,
   DEFAULT_LEASE_MS,
   type EventType,
@@ -27,7 +28,7 @@ import {
 
 export async function createBoard(
   kv: Deno.Kv,
-  input: { slug: string; title: string; description?: string; leaseMs?: number; heartbeatMs?: number },
+  input: { slug: string; title: string; description?: string; leaseMs?: number; heartbeatMs?: number; eventRetentionMs?: number },
 ): Promise<Board | { error: string }> {
   if (!input.slug.trim()) return { error: "slug is required" };
   if (!input.title.trim()) return { error: "title is required" };
@@ -43,6 +44,7 @@ export async function createBoard(
     description: input.description,
     leaseMs: input.leaseMs,
     heartbeatMs: input.heartbeatMs,
+    eventRetentionMs: input.eventRetentionMs,
     createdAt: Date.now(),
   };
 
@@ -157,23 +159,46 @@ async function unmetDependencies(kv: Deno.Kv, boardId: string, card: Card): Prom
   return unmet;
 }
 
-// Pragmatic glob-overlap check: compares each pattern's fixed prefix (the
-// part before the first wildcard character). Two scopes conflict if one
-// prefix contains the other — "src/api/**" and "src/api/handlers.ts"
-// conflict, "src/api/**" and "src/web/**" don't. Full glob-set intersection
-// is real hardening work (plan section 8, M6); this catches the common
-// same-directory case cheaply.
-function globPrefix(pattern: string): string {
-  const idx = pattern.search(/[*?[{]/);
-  return idx === -1 ? pattern : pattern.slice(0, idx);
+// Glob-overlap check (M6 hardening — replaces the old fixed-prefix
+// heuristic, which had a path-boundary false positive: "src/api" vs
+// "src/apifoo.ts"). Patterns are normalized, split into path segments, and
+// walked recursively: "**" spans any number of segments, and two segments
+// can coexist if either contains a wildcard (conservative: a wildcard
+// segment is assumed to be able to hit the other — false positives only
+// delay a claim, false negatives corrupt parallel work) or the literals are
+// equal. "**" matches zero or more segments, so "src/api/**" overlaps
+// "src/api" itself.
+function normalizeGlob(pattern: string): string[] {
+  return pattern
+    .replace(/^\.\//, "")
+    .split("/")
+    .filter((seg) => seg !== "" && seg !== ".");
+}
+
+function segmentsCanMatch(a: string, b: string): boolean {
+  const aWild = /[*?[{]/.test(a);
+  const bWild = /[*?[{]/.test(b);
+  if (!aWild && !bWild) return a === b;
+  return true;
+}
+
+function globsIntersect(a: string[], b: string[], i = 0, j = 0): boolean {
+  if (i === a.length && j === b.length) return true;
+  if (i < a.length && a[i] === "**") {
+    return globsIntersect(a, b, i + 1, j) || (j < b.length && globsIntersect(a, b, i, j + 1));
+  }
+  if (j < b.length && b[j] === "**") {
+    return globsIntersect(a, b, i, j + 1) || (i < a.length && globsIntersect(a, b, i + 1, j));
+  }
+  if (i === a.length || j === b.length) return false;
+  return segmentsCanMatch(a[i], b[j]) && globsIntersect(a, b, i + 1, j + 1);
 }
 
 function scopesOverlap(a: string[], b: string[]): boolean {
   for (const pa of a) {
-    const prefixA = globPrefix(pa);
+    const segsA = normalizeGlob(pa);
     for (const pb of b) {
-      const prefixB = globPrefix(pb);
-      if (prefixA.startsWith(prefixB) || prefixB.startsWith(prefixA)) return true;
+      if (globsIntersect(segsA, normalizeGlob(pb))) return true;
     }
   }
   return false;
@@ -201,13 +226,24 @@ export async function createCard(
     acceptance?: string[];
   },
 ): Promise<Card> {
-  const dependsOn = input.dependsOn ?? [];
+  // Dependency hygiene (M6): dedupe, and require every referenced card to
+  // exist on this board. Note on the plan's "dependency-cycle detection"
+  // item: cycles are impossible by construction — ids are server-minted at
+  // create time and dependsOn is immutable afterward, so no existing card
+  // can ever point at a newer one. If an edit-dependencies path is ever
+  // added, that's where a real cycle check must go.
+  const dependsOn = [...new Set(input.dependsOn ?? [])];
+  let unmetCount = 0;
   if (dependsOn.length > 0) {
     const deps = await Promise.all(dependsOn.map((id) => kv.get<Card>(keys.card(boardId, id))));
     const unknown = dependsOn.filter((_, i) => deps[i].value === null);
     if (unknown.length > 0) {
       throw new Error(`unknown dependsOn card(s): ${unknown.join(", ")}`);
     }
+    // Count only deps that still need to finish — a card depending solely
+    // on already-done cards must start "ready", because unblockDependents
+    // only fires on future completions and would never rescue it (M6 fix).
+    unmetCount = deps.filter((d) => d.value!.status !== "done").length;
   }
   const now = Date.now();
   const card: Card = {
@@ -215,7 +251,7 @@ export async function createCard(
     boardId,
     title: input.title,
     description: input.description,
-    status: dependsOn.length > 0 ? "backlog" : "ready",
+    status: unmetCount > 0 ? "backlog" : "ready",
     priority: input.priority ?? 100,
     dependsOn,
     fileScope: input.fileScope ?? [],
@@ -566,13 +602,21 @@ export async function registerAgent(
       meta: input.meta,
     };
     const event = makeEvent(boardId, "agent.registered", agent.id, undefined, `${agent.name} (${agent.role}) registered`);
-    const res = await kv.atomic()
+    // A brand-new agent's cursors start at "now": its own registration
+    // event and pre-existing broadcasts are history, not news — without
+    // this, the first heartbeat's newEvents count nags every fresh session
+    // about its own registration (M5 pilot observation). Upserted
+    // (returning) agents keep their stored cursors untouched.
+    const lastBroadcastId = await latestBroadcastId(kv, boardId);
+    let tx = kv.atomic()
       .check(nameEntry)
       .set(keys.agent(boardId, agent.id), agent)
       .set(nameKey, agent.id)
       .set(keys.agentBoardIndex(agent.id), boardId)
       .set(keys.event(boardId, event.id), event)
-      .commit();
+      .set(keys.cursor(boardId, agent.id), event.id);
+    if (lastBroadcastId) tx = tx.set(keys.broadcastCursor(boardId, agent.id), lastBroadcastId);
+    const res = await tx.commit();
     if (res.ok) return agent;
     // Lost the race for this name — next attempt finds it taken and upserts.
   }
@@ -609,7 +653,12 @@ export async function heartbeat(kv: Deno.Kv, boardId: string, agentId: string, s
   for (let attempt = 0; attempt < MAX_PATCH_RETRIES && !updatedAgent; attempt++) {
     const entry = await kv.get<Agent>(keys.agent(boardId, agentId));
     if (!entry.value) throw new Error(`unknown agent: ${agentId}`);
-    const updated: Agent = { ...entry.value, lastHeartbeatAt: Date.now(), status: status ?? entry.value.status };
+    // A heartbeat is proof of life: an agent the reaper flipped to
+    // "offline" comes back as "idle" unless the caller says otherwise —
+    // without this, a reaped agent stays labeled offline forever while
+    // actively working (M6, observed in the M5 pilot).
+    const revived = entry.value.status === "offline" ? "idle" : entry.value.status;
+    const updated: Agent = { ...entry.value, lastHeartbeatAt: Date.now(), status: status ?? revived };
 
     let tx = kv.atomic().check(entry).set(keys.agent(boardId, agentId), updated);
     if (updated.currentCardId) {
@@ -671,6 +720,26 @@ async function setAgentCurrentCard(
 export interface SweepResult {
   agentsMarkedOffline: string[];
   cardsReleased: string[];
+  eventsCompacted: number;
+}
+
+// Event-log compaction (plan section 8, M6): drop events older than the
+// board's retention window. Events list oldest-first (ULID order), so we
+// delete from the front and stop at the first still-fresh event; the
+// per-sweep cap bounds a single reaper tick even after long downtime.
+// Agent event cursors may end up pointing at a deleted event — harmless,
+// since cursor reads are "strictly after this ULID" string comparisons.
+const MAX_COMPACT_PER_SWEEP = 500;
+
+async function compactEvents(kv: Deno.Kv, board: Board, now: number): Promise<number> {
+  const cutoff = now - (board.eventRetentionMs ?? DEFAULT_EVENT_RETENTION_MS);
+  let deleted = 0;
+  for await (const entry of kv.list<BoardEvent>({ prefix: keys.eventsPrefix(board.id) })) {
+    if (entry.value.createdAt >= cutoff || deleted >= MAX_COMPACT_PER_SWEEP) break;
+    await kv.delete(entry.key);
+    deleted++;
+  }
+  return deleted;
 }
 
 // A handful of missed heartbeats, not just one late one — a single slow
@@ -685,7 +754,7 @@ export async function sweepBoard(kv: Deno.Kv, board: Board): Promise<SweepResult
   const now = Date.now();
   const heartbeatMs = board.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
   const offlineThresholdMs = heartbeatMs * OFFLINE_MISSED_HEARTBEATS;
-  const result: SweepResult = { agentsMarkedOffline: [], cardsReleased: [] };
+  const result: SweepResult = { agentsMarkedOffline: [], cardsReleased: [], eventsCompacted: 0 };
 
   const agents = await listAgents(kv, board.id);
   for (const agent of agents) {
@@ -728,6 +797,8 @@ export async function sweepBoard(kv: Deno.Kv, board: Board): Promise<SweepResult
       if (releasedAgent) await setAgentCurrentCard(kv, board.id, releasedAgent, undefined, "idle");
     }
   }
+
+  result.eventsCompacted = await compactEvents(kv, board, now);
 
   return result;
 }
@@ -800,6 +871,13 @@ export async function getBoardStatus(kv: Deno.Kv, boardId: string): Promise<Boar
 // specific agent) are deleted once read. Broadcasts ("*") are a shared ring
 // buffer — every agent reads the same records, so instead of deleting on
 // read, each agent tracks its own cursor into the ring.
+
+async function latestBroadcastId(kv: Deno.Kv, boardId: string): Promise<string | null> {
+  for await (const entry of kv.list<Message>({ prefix: keys.broadcastPrefix(boardId) }, { reverse: true, limit: 1 })) {
+    return entry.value.id;
+  }
+  return null;
+}
 
 async function listInbox(kv: Deno.Kv, boardId: string, agentId: string): Promise<Message[]> {
   const messages: Message[] = [];

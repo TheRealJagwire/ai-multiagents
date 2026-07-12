@@ -22,7 +22,7 @@ async function freshKv(): Promise<Deno.Kv> {
   return await Deno.openKv(":memory:");
 }
 
-async function mustCreateBoard(kv: Deno.Kv, slug: string, overrides?: { leaseMs?: number; heartbeatMs?: number }) {
+async function mustCreateBoard(kv: Deno.Kv, slug: string, overrides?: { leaseMs?: number; heartbeatMs?: number; eventRetentionMs?: number }) {
   const board = await createBoard(kv, { slug, title: slug, ...overrides });
   if ("error" in board) throw new Error(board.error);
   return board;
@@ -508,6 +508,134 @@ Deno.test("heartbeat: reports unread-message and new-event counts without consum
     // agent's actual check_messages/watch_events calls.
     assertEquals((await checkMessages(kv, board.id, agent.id)).length, 1);
     assert((await watchEvents(kv, board.id, agent.id)).length >= 1);
+  } finally {
+    kv.close();
+  }
+});
+
+// ---------- M6 hardening ----------
+
+// Exercises scopesOverlap through the public claim path: agent1 holds a
+// card with scopeA in_progress; whether agent2 can claim a card with scopeB
+// tells us if the scopes were judged to overlap.
+async function scopesConflict(scopeA: string[], scopeB: string[]): Promise<boolean> {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "scope-check");
+    const a1 = await mustRegister(kv, board.id, "holder");
+    const a2 = await mustRegister(kv, board.id, "challenger");
+    const cardA = await createCard(kv, board.id, { title: "A", description: "x", fileScope: scopeA });
+    const cardB = await createCard(kv, board.id, { title: "B", description: "x", fileScope: scopeB });
+    const first = await claimCard(kv, board.id, a1.id, cardA.id);
+    assert(first.ok, "holder must claim its card");
+    const second = await claimCard(kv, board.id, a2.id, cardB.id);
+    return !second.ok;
+  } finally {
+    kv.close();
+  }
+}
+
+Deno.test("fileScope: segment-aware overlap fixes prefix false positives and normalization", async () => {
+  // Old prefix heuristic called this a conflict ("src/api" is a string
+  // prefix of "src/apifoo.ts") — segment matching must not.
+  assertEquals(await scopesConflict(["src/api"], ["src/apifoo.ts"]), false);
+  // "./"-prefixed patterns are the same paths after normalization.
+  assertEquals(await scopesConflict(["./src/api/x.ts"], ["src/api/**"]), true);
+  // "**" spans zero segments: a dir glob overlaps the bare dir path.
+  assertEquals(await scopesConflict(["src/api/**"], ["src/api"]), true);
+  // A leading "**" can land inside any directory.
+  assertEquals(await scopesConflict(["**/*.test.ts"], ["src/**"]), true);
+  // Genuinely disjoint trees stay parallel.
+  assertEquals(await scopesConflict(["docs/*.md"], ["src/**"]), false);
+  assertEquals(await scopesConflict(["server/orchestration/routes.ts"], ["server/orchestration/service.test.ts"]), false);
+});
+
+Deno.test("createCard: dependsOn is deduped and already-done deps start the card ready", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "deps-hygiene");
+    const agent = await mustRegister(kv, board.id, "worker-1");
+
+    const dep = await createCard(kv, board.id, { title: "Dep", description: "x" });
+    assert((await claimCard(kv, board.id, agent.id, dep.id)).ok);
+    await completeCard(kv, board.id, dep.id, agent.id, "done");
+
+    // Depending only on an already-done card must not strand it in backlog
+    // (unblockDependents never fires again for that dep).
+    const late = await createCard(kv, board.id, { title: "Late joiner", description: "x", dependsOn: [dep.id, dep.id] });
+    assertEquals(late.status, "ready");
+    assertEquals(late.dependsOn, [dep.id], "duplicate ids collapse to one");
+
+    // A mix of done + not-done still waits.
+    const open = await createCard(kv, board.id, { title: "Open dep", description: "x" });
+    const waiting = await createCard(kv, board.id, { title: "Waiting", description: "x", dependsOn: [dep.id, open.id] });
+    assertEquals(waiting.status, "backlog");
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("heartbeat: revives a reaped-offline agent to idle unless told otherwise", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "revive", { heartbeatMs: 1 });
+    const agent = await mustRegister(kv, board.id, "sleepy");
+    await new Promise((r) => setTimeout(r, 20));
+    const swept = await sweepBoard(kv, board);
+    assert(swept.agentsMarkedOffline.includes(agent.id));
+
+    // A plain heartbeat is proof of life — back to idle.
+    const hb = await heartbeat(kv, board.id, agent.id);
+    assertEquals(hb.agent.status, "idle");
+
+    // An explicit status still wins (the SessionEnd hook sends "offline").
+    const explicit = await heartbeat(kv, board.id, agent.id, "offline");
+    assertEquals(explicit.agent.status, "offline");
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("sweepBoard: compacts events older than the board's retention window", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "compaction", { eventRetentionMs: 1 });
+    await createCard(kv, board.id, { title: "Old news", description: "x" });
+    await createCard(kv, board.id, { title: "Older news", description: "x" });
+    assertEquals((await listEvents(kv, board.id)).length, 2);
+
+    await new Promise((r) => setTimeout(r, 20));
+    const swept = await sweepBoard(kv, board);
+    assertEquals(swept.eventsCompacted, 2);
+    assertEquals((await listEvents(kv, board.id)).length, 0);
+  } finally {
+    kv.close();
+  }
+});
+
+Deno.test("registerAgent: fresh agents start with cursors at now — no self-registration noise", async () => {
+  const kv = await freshKv();
+  try {
+    const board = await mustCreateBoard(kv, "cursor-init");
+    const early = await mustRegister(kv, board.id, "early-bird");
+    await sendMessage(kv, board.id, { from: early.id, to: "*", body: "old broadcast" });
+    await createCard(kv, board.id, { title: "Old card", description: "x" });
+
+    // A newcomer sees none of that history — and not its own registration.
+    const late = await mustRegister(kv, board.id, "late-joiner");
+    const hb = await heartbeat(kv, board.id, late.id);
+    assertEquals(hb.newEvents, 0);
+    assertEquals(hb.unreadMessages, 0);
+    assertEquals(await watchEvents(kv, board.id, late.id), []);
+    assertEquals(await checkMessages(kv, board.id, late.id), []);
+
+    // But everything from here on is news.
+    await createCard(kv, board.id, { title: "Fresh card", description: "x" });
+    assertEquals((await heartbeat(kv, board.id, late.id)).newEvents, 1);
+
+    // Re-registering (session resume) keeps the cursor position.
+    await mustRegister(kv, board.id, "late-joiner");
+    assertEquals((await heartbeat(kv, board.id, late.id)).newEvents, 1);
   } finally {
     kv.close();
   }

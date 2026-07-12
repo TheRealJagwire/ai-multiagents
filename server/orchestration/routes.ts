@@ -92,6 +92,7 @@ orchestrationApp.post("/boards", async (c) => {
     description: typeof body.description === "string" ? body.description : undefined,
     leaseMs: typeof body.leaseMs === "number" ? body.leaseMs : undefined,
     heartbeatMs: typeof body.heartbeatMs === "number" ? body.heartbeatMs : undefined,
+    eventRetentionMs: typeof body.eventRetentionMs === "number" ? body.eventRetentionMs : undefined,
   });
   if ("error" in result) return c.text(result.error, 400);
   return c.json(result, 201);

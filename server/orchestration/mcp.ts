@@ -23,15 +23,39 @@ import { WebStandardStreamableHTTPServerTransport } from "npm:@modelcontextproto
 import { z } from "npm:zod@^4.4.3";
 import { getKv } from "./kv.ts";
 import * as svc from "./service.ts";
-import type { AgentStatus, Board, CardStatus } from "./types.ts";
+import type { Agent, AgentStatus, Board, CardStatus } from "./types.ts";
 
 const CARD_STATUSES = ["backlog", "ready", "in_progress", "review", "done", "blocked"] as const;
 const AGENT_STATUSES = ["idle", "working", "blocked", "offline"] as const;
 
 // Compact JSON-ish text per plan section 5's tool-layer design rules — no
 // pretty-printing, token cost is a real constraint when several sessions poll.
+//
+// M6 token audit: every tool call is board-scoped by construction, so the
+// boardId field repeated on each card/agent/event/message record is pure
+// overhead for the calling session — strip it recursively at this single
+// choke point. REST responses keep full fidelity; this is MCP-only.
+function stripBoardId(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripBoardId);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "boardId") continue;
+      out[k] = stripBoardId(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 function toolResult(data: unknown, isError = false) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data) }], isError };
+  return { content: [{ type: "text" as const, text: JSON.stringify(stripBoardId(data)) }], isError };
+}
+
+// Team-status views drop meta/registeredAt — polling agents only need who's
+// here, what they hold, and how fresh their heartbeat is (M6 token audit).
+function slimAgent(a: Agent) {
+  return { id: a.id, name: a.name, role: a.role, status: a.status, currentCardId: a.currentCardId, lastHeartbeatAt: a.lastHeartbeatAt };
 }
 
 function errorFrom(err: unknown): ReturnType<typeof toolResult> {
@@ -140,7 +164,7 @@ function buildServer(queryBoard: string | undefined): McpServer {
       const resolved = await resolveBoardForCall(kv, queryBoard, board, undefined);
       const agent = await svc.registerAgent(kv, resolved.id, { name, role, meta });
       const team = await svc.listAgents(kv, resolved.id);
-      return toolResult({ agent_id: agent.id, board: resolved.slug, protocol: PROTOCOL_REMINDER, team });
+      return toolResult({ agent_id: agent.id, board: resolved.slug, protocol: PROTOCOL_REMINDER, team: team.map(slimAgent) });
     } catch (err) {
       return errorFrom(err);
     }
@@ -154,7 +178,8 @@ function buildServer(queryBoard: string | undefined): McpServer {
     const kv = await getKv();
     try {
       const resolved = await resolveBoardForCall(kv, queryBoard, board, agent_id);
-      return toolResult(await svc.heartbeat(kv, resolved.id, agent_id, status));
+      const hb = await svc.heartbeat(kv, resolved.id, agent_id, status);
+      return toolResult({ agent: slimAgent(hb.agent), unreadMessages: hb.unreadMessages, newEvents: hb.newEvents });
     } catch (err) {
       return errorFrom(err);
     }
@@ -167,7 +192,7 @@ function buildServer(queryBoard: string | undefined): McpServer {
     const kv = await getKv();
     try {
       const resolved = await resolveBoardForCall(kv, queryBoard, board, undefined);
-      return toolResult(await svc.listAgents(kv, resolved.id));
+      return toolResult((await svc.listAgents(kv, resolved.id)).map(slimAgent));
     } catch (err) {
       return errorFrom(err);
     }
@@ -197,7 +222,9 @@ function buildServer(queryBoard: string | undefined): McpServer {
       const card = await svc.getCard(kv, resolved.id, card_id);
       if (!card) return toolResult({ error: `unknown card: ${card_id}` }, true);
       const events = await svc.listEvents(kv, resolved.id);
-      const recentEvents = events.filter((e) => e.cardId === card_id).slice(-10);
+      // Slimmed: id/cardId are redundant inside a single card's own view.
+      const recentEvents = events.filter((e) => e.cardId === card_id).slice(-10)
+        .map((e) => ({ type: e.type, actor: e.actor, detail: e.detail, createdAt: e.createdAt }));
       return toolResult({ ...card, recentEvents });
     } catch (err) {
       return errorFrom(err);
@@ -414,7 +441,7 @@ function buildServer(queryBoard: string | undefined): McpServer {
       const board = await svc.resolveBoard(kv, String(slug));
       if (!board) return { contents: [{ uri: uri.toString(), text: JSON.stringify({ error: `unknown board: ${slug}` }) }] };
       const [status, team] = await Promise.all([svc.getBoardStatus(kv, board.id), svc.listAgents(kv, board.id)]);
-      return { contents: [{ uri: uri.toString(), text: JSON.stringify({ ...status, team }) }] };
+      return { contents: [{ uri: uri.toString(), text: JSON.stringify({ ...status, team: team.map(slimAgent) }) }] };
     },
   );
 
