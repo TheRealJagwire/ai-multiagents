@@ -290,8 +290,11 @@ function handleMessage(sid: string, message: SDKMessage): void {
         if (state === "running") {
           pushSessionPatch(sid, { status: "running", statusLine: "Working…", phase: "executing" });
         } else if (state === "idle") {
+          // Honest status: the session is alive but doing nothing. It used
+          // to stay "running" here with only the statusLine hinting at the
+          // truth — the status itself should say it.
           pushSessionPatch(sid, {
-            status: "running",
+            status: "idle",
             statusLine: "Idle — ready for the next message",
             phase: "reviewing",
           });

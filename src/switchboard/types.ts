@@ -1,5 +1,8 @@
 export type SessionStatus =
   | "running"
+  // Alive with nothing in flight — the process is up and ready for the
+  // next message, but not doing anything right now.
+  | "idle"
   | "waiting"
   | "error"
   | "paused"

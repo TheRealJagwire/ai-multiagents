@@ -36,6 +36,7 @@ export function modelEffortLabel(model: Model, effort: Effort): string {
 
 const statusLabels: Record<SessionStatus, string> = {
   running: "running",
+  idle: "idle",
   waiting: "needs you",
   error: "blocked",
   paused: "paused",

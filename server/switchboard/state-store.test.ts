@@ -103,6 +103,17 @@ describe("state-store", () => {
     assertEquals(state.grants.length, 1);
   });
 
+  it("idle sessions are live processes — restored as stopped like running ones", async () => {
+    state.sessions = [makeSession("s-1", "idle")];
+    persistStateSoon();
+    await waitForStateFile();
+
+    resetState();
+    await initPersistedState();
+    assertEquals(state.sessions[0].status, "stopped");
+    assert(state.sessions[0].statusLine.startsWith("App restarted"));
+  });
+
   it("does not stack restart notes across repeated restarts", async () => {
     state.sessions = [makeSession("s-1", "running")];
     persistStateSoon();

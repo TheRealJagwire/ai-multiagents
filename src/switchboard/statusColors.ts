@@ -8,6 +8,7 @@ export interface StatusColors {
 
 const colors: Record<SessionStatus, StatusColors> = {
   running: { dot: "var(--sb-running-dot)", bg: "var(--sb-running-bg)", text: "var(--sb-running-text)" },
+  idle: { dot: "var(--sb-idle-dot)", bg: "var(--sb-idle-bg)", text: "var(--sb-idle-text)" },
   waiting: { dot: "var(--sb-waiting-dot)", bg: "var(--sb-waiting-bg)", text: "var(--sb-waiting-text)" },
   error: { dot: "var(--sb-error-dot)", bg: "var(--sb-error-bg)", text: "var(--sb-error-text)" },
   paused: { dot: "var(--sb-paused-dot)", bg: "var(--sb-paused-bg)", text: "var(--sb-paused-text)" },

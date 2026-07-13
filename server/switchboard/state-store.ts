@@ -86,8 +86,9 @@ export function persistStateSoon(): void {
 
 // A session that was alive when the app died can't be reconnected (its
 // process is gone) — surface that honestly instead of showing a stale
-// "running".
-const DEAD_STATUSES = new Set(["running", "waiting", "paused"]);
+// "running". "idle" belongs here too: idle means a LIVE process waiting
+// for input, which is exactly what a restart kills.
+const DEAD_STATUSES = new Set(["running", "idle", "waiting", "paused"]);
 
 function sanitizeRestoredSession(session: Session): Session {
   if (!DEAD_STATUSES.has(session.status)) return session;

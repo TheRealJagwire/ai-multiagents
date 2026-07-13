@@ -51,6 +51,10 @@
   --sb-paused-bg: #f1efeb;
   --sb-paused-text: #6d6a63;
 
+  --sb-idle-dot: #6b8fb3;
+  --sb-idle-bg: #edf2f7;
+  --sb-idle-text: #4e6d8c;
+
   /* status: stopped */
   --sb-stopped-dot: #b0776b;
   --sb-stopped-bg: #f7ece9;
@@ -147,6 +151,10 @@
     --sb-paused-bg: #2a2724;
     --sb-paused-text: #b5b0a7;
 
+    --sb-idle-dot: #7da3c8;
+    --sb-idle-bg: #20272e;
+    --sb-idle-text: #9cb8d3;
+
     --sb-stopped-dot: #c48d80;
     --sb-stopped-bg: #2e211d;
     --sb-stopped-text: #d99884;
@@ -216,6 +224,10 @@
   --sb-paused-dot: #938e85;
   --sb-paused-bg: #2a2724;
   --sb-paused-text: #b5b0a7;
+
+  --sb-idle-dot: #7da3c8;
+  --sb-idle-bg: #20272e;
+  --sb-idle-text: #9cb8d3;
 
   --sb-stopped-dot: #c48d80;
   --sb-stopped-bg: #2e211d;
