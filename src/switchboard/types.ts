@@ -108,6 +108,10 @@ export interface Team {
   coordination: TeamCoordination;
   workersStarted: boolean;
   useWorktree: boolean;
+  // Orchestration-board link: slug of the kanban board this team works
+  // (TeamsTab renders the live board). Explicit at creation, else
+  // auto-detected from the repo's .mcp.json ?board= param; null = none.
+  boardSlug: string | null;
 }
 
 export type McpTransport = "stdio" | "http" | "sse";

@@ -144,6 +144,7 @@ describe("railGroups", () => {
       coordination: "classic",
       workersStarted: true,
       useWorktree: true,
+      boardSlug: null,
     }];
     sessions.value = [
       makeSession({ id: "s-w", teamId: "tm-1", lead: false }),

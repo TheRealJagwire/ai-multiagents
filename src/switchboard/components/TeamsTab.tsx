@@ -10,6 +10,7 @@ import {
 } from "../actions.ts";
 import { elapsed } from "../format.ts";
 import { TeamMemberRow } from "./TeamMemberRow.tsx";
+import { TeamBoardPanel } from "./TeamBoardPanel.tsx";
 
 const coordinationLabel: Record<string, string> = { sequenced: "Sequenced", autonomous: "Autonomous" };
 
@@ -210,6 +211,7 @@ export function TeamsTab() {
             <div style={{ fontSize: 10.5, color: "var(--sb-text-5)", fontFamily: "var(--sb-font-mono)", marginBottom: 14 }}>
               {team.dir} · {team.baseRef}
             </div>
+            {team.boardSlug && <TeamBoardPanel slug={team.boardSlug} />}
             {members.map((session) => (
               <TeamMemberRow
                 key={session.id}

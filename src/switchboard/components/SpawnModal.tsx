@@ -12,6 +12,7 @@ import {
   recentDirs,
   spawnAutonomousLead,
   spawnBaseRef,
+  spawnBoardSlug,
   spawnCreateNew,
   spawnDir,
   spawnSessionName,
@@ -44,6 +45,7 @@ import {
   setPromptText,
   setSpawnAutonomousLead,
   setSpawnBaseRef,
+  setSpawnBoardSlug,
   setSpawnCreateNew,
   setSpawnDir,
   setSpawnSessionName,
@@ -239,6 +241,15 @@ export function SpawnModal() {
                   value={promptText.value}
                   onInput={(e) => setPromptText((e.target as HTMLTextAreaElement).value)}
                   style={{ ...inputStyle, resize: "none", height: 54 }}
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={labelStyle}>Kanban board slug (optional — auto-detected from the repo's .mcp.json)</div>
+                <input
+                  placeholder="e.g. ai-multiagents"
+                  value={spawnBoardSlug.value}
+                  onInput={(e) => setSpawnBoardSlug((e.target as HTMLInputElement).value)}
+                  style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
                 />
               </div>
               <div style={{ display: "flex", gap: 12 }}>

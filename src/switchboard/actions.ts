@@ -70,6 +70,7 @@ import {
   spawnBaseRef,
   spawnCreateNew,
   spawnDir,
+  spawnBoardSlug,
   spawnSessionName,
   spawnError,
   spawnLeadPlans,
@@ -747,6 +748,7 @@ function resetSpawnFields(mode: SpawnMode, teamId?: string): void {
   draftMembers.value = mode === "new" ? freshDraft() : [];
   spawnDir.value = "";
   spawnSessionName.value = "";
+  spawnBoardSlug.value = "";
   spawnBaseRef.value = "HEAD";
   spawnCreateNew.value = false;
   spawnNoWorktree.value = false;
@@ -794,6 +796,10 @@ export function setPromptText(value: string): void {
 
 export function setSpawnSessionName(value: string): void {
   spawnSessionName.value = value;
+}
+
+export function setSpawnBoardSlug(value: string): void {
+  spawnBoardSlug.value = value;
 }
 
 export function setTargetTeamId(id: string | null): void {
@@ -961,6 +967,7 @@ export async function submitSpawn(): Promise<void> {
             coordination,
             mcpConfigIds: spawnMcpConfigIds.value,
             members,
+            boardSlug: spawnBoardSlug.value.trim() || undefined,
           };
         })()
         : {

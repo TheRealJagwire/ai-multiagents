@@ -131,7 +131,8 @@ export async function initPersistedState(): Promise<void> {
 
   const restoredSessions = arr<Session>(parsed.sessions);
   state.sessions = restoredSessions.map(sanitizeRestoredSession);
-  state.teams = arr<Team>(parsed.teams);
+  // Older files predate the board link — normalize to the required shape.
+  state.teams = arr<Team>(parsed.teams).map((t) => ({ ...t, boardSlug: t.boardSlug ?? null }));
   state.events = arr<FeedEvent>(parsed.events);
   state.grants = arr<Grant>(parsed.grants);
   state.mcpConfigs = arr<McpConfig>(parsed.mcpConfigs);

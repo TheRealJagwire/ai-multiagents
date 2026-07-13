@@ -17,6 +17,7 @@ import {
 } from "./git-worktree.ts";
 import { parseSpecFile } from "./team-spec.ts";
 import { generateSessionName } from "./session-names.ts";
+import { detectBoardSlug } from "./board-link.ts";
 import { parseCoordination, parseEffort, parseModel, parseStringArray } from "./parse-body.ts";
 import { join } from "jsr:@std/path";
 
@@ -281,6 +282,7 @@ export function spawnTeam(
   mcpConfigIds: string[],
   members: { task: string; model: Model; effort: Effort; name?: string }[],
   useWorktree: boolean,
+  boardSlug?: string,
 ): void {
   const trimmedName = name.trim() || "New team";
   const trimmedGoal = goal.trim() || "No goal set yet.";
@@ -332,9 +334,20 @@ export function spawnTeam(
       coordination: effectiveCoordination,
       workersStarted: false,
       useWorktree,
+      boardSlug: boardSlug?.trim() || null,
     },
   ]);
   for (const session of sessions) pushSessionAdd(session);
+
+  // No explicit board? See if the repo declares one (.mcp.json ?board=) —
+  // async and best-effort; the team appears immediately and the board
+  // panel shows up a beat later if a link is found.
+  if (!boardSlug?.trim()) {
+    detectBoardSlug(dir).then((detected) => {
+      if (!detected) return;
+      pushTeamsReplace(state.teams.map((t) => (t.id === teamId ? { ...t, boardSlug: detected } : t)));
+    });
+  }
 
   sessions.forEach((session, i) => {
     pushTranscriptMessage(
@@ -418,7 +431,8 @@ export function spawnFromBody(body: Record<string, unknown>): void {
         };
       })
       : [];
-    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members, useWorktree);
+    const boardSlug = typeof body.boardSlug === "string" ? body.boardSlug : undefined;
+    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members, useWorktree, boardSlug);
     return;
   }
 
