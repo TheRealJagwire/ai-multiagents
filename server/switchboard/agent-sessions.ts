@@ -278,7 +278,9 @@ function textFromContent(content: unknown): string {
 // The full SDKMessage union has 20+ variants (retry/hook/task-progress/etc.)
 // beyond the ones handled here — verify against the installed package's
 // sdk.d.ts and extend incrementally rather than guessing subtype names.
-function handleMessage(sid: string, message: SDKMessage): void {
+// Exported for tests: the status mapping (running/idle/waiting) is pure
+// state logic that must not depend on driving a real subprocess.
+export function handleMessage(sid: string, message: SDKMessage): void {
   const anyMessage = message as unknown as Record<string, unknown>;
 
   switch (anyMessage.type) {
@@ -351,6 +353,12 @@ function handleMessage(sid: string, message: SDKMessage): void {
       // A "result" marks the end of one turn, not the end of the session —
       // more messages (approvals, chat replies, retries) can still arrive
       // via the same queue, so this deliberately does not set status "done".
+      // It IS the authoritative "turn over" signal in this integration,
+      // though: the SDK's session_state_changed idle event is tied to
+      // background-agent flows and never fires for a plain streaming-input
+      // query, so the idle transition happens here. Guarded on "running" so
+      // an interrupt-triggered result can't clobber paused/stopped, and a
+      // pending-approval "waiting" stays waiting.
       if (anyMessage.subtype === "success") {
         flushTurnSummary(sid);
       } else if (anyMessage.subtype) {
@@ -361,6 +369,16 @@ function handleMessage(sid: string, message: SDKMessage): void {
           kind: "error",
           own: false,
           verb: errors.length ? errors.join("; ") : `turn ended with an error (${anyMessage.subtype})`,
+        });
+      }
+      const session = state.sessions.find((s) => s.id === sid);
+      if (session?.status === "running") {
+        pushSessionPatch(sid, {
+          status: "idle",
+          statusLine: anyMessage.subtype === "success"
+            ? "Idle — ready for the next message"
+            : "Idle — last turn ended with an error",
+          phase: "reviewing",
         });
       }
       break;
