@@ -9,6 +9,7 @@
     "strict": true
   },
   "tasks": {
+    "test": "deno test -A server/",
     "build": "deno run -A npm:vite build",
     "dev": "deno task build && deno desktop -A --hmr --include ./dist main.ts",
     "build:macos": "deno task build && deno desktop -A --include ./dist -o ./release/macos/MyApp.app main.ts",
