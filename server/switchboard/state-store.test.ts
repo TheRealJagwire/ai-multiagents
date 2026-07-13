@@ -175,6 +175,15 @@ describe("state-store", () => {
     assertEquals(state.mcpConfigs, []);
   });
 
+  it("writes state.json owner-only (0600) on POSIX — transcripts can hold secrets", async () => {
+    if (Deno.build.os === "windows") return;
+    state.sessions = [makeSession("s-1", "done")];
+    persistStateSoon();
+    await waitForStateFile();
+    const info = await Deno.stat(STATE_FILE);
+    assertEquals(info.mode! & 0o777, 0o600);
+  });
+
   it("caps persisted events at the newest 1000", async () => {
     state.events = Array.from({ length: 1050 }, (_, i) => ({
       id: `e-${i + 1}`,

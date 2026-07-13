@@ -58,6 +58,13 @@ async function writeNow(persisted: PersistedState): Promise<void> {
   // crash-recovery file.
   const tmpFile = `${STATE_FILE}.tmp-${crypto.randomUUID()}`;
   await Deno.writeTextFile(tmpFile, JSON.stringify(persisted));
+  // Transcripts routinely contain secrets that tools echoed (env vars,
+  // file contents) — same owner-only treatment settings.json gets.
+  try {
+    await Deno.chmod(tmpFile, 0o600);
+  } catch {
+    // no POSIX modes on this platform
+  }
   await Deno.rename(tmpFile, STATE_FILE);
 }
 

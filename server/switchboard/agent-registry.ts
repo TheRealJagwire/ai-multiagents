@@ -15,6 +15,11 @@ export interface AgentSessionHandle {
   // `dir` directly, and there's no worktree/branch for cleanup to remove.
   branch: string | null;
   sessionAllowAll: boolean;
+  // Set by togglePause: whether the session had a turn in flight when it
+  // was paused. Resume only sends "Continue." if something was actually
+  // interrupted — resuming an idle session must not start (and bill) a
+  // fresh turn.
+  pausedMidTurn?: boolean;
 }
 
 const sessions = new Map<string, AgentSessionHandle>();

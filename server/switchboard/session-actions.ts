@@ -1,8 +1,8 @@
 import { findSession, state } from "./state.ts";
-import { pushFeedEvent, pushSessionPatch, pushSessionRemove } from "./mutations.ts";
+import { pushFeedEvent, pushSessionPatch, pushSessionRemove, pushTranscriptRemove, removeGrant } from "./mutations.ts";
 import { getAgentSession, unregisterAgentSession } from "./agent-registry.ts";
 import { removeWorktree } from "./git-worktree.ts";
-import { slugFrom } from "./spawn-actions.ts";
+import { slugFrom, uniqueBaseName } from "./spawn-actions.ts";
 
 export function togglePause(sid: string): void {
   const session = findSession(sid);
@@ -12,15 +12,25 @@ export function togglePause(sid: string): void {
   if (!handle) return;
 
   const paused = session.status === "paused";
-  pushSessionPatch(sid, {
-    status: paused ? "running" : "paused",
-    statusLine: paused ? "Resuming…" : "Paused by you",
-  });
-  pushFeedEvent({ sid, kind: "info", own: true, verb: paused ? "resumed by you" : "paused by you" });
 
   if (paused) {
-    handle.pushMessage("Continue.");
+    // Resume: only nudge the agent if pause actually interrupted a turn —
+    // "Continue."-ing an idle session would start (and bill) a brand-new
+    // turn the user never asked for.
+    const midTurn = handle.pausedMidTurn === true;
+    handle.pausedMidTurn = false;
+    pushSessionPatch(
+      sid,
+      midTurn
+        ? { status: "running", statusLine: "Resuming…" }
+        : { status: "idle", statusLine: "Idle — ready for the next message", phase: "reviewing" },
+    );
+    pushFeedEvent({ sid, kind: "info", own: true, verb: "resumed by you" });
+    if (midTurn) handle.pushMessage("Continue.");
   } else {
+    handle.pausedMidTurn = session.status === "running" || session.status === "waiting";
+    pushSessionPatch(sid, { status: "paused", statusLine: "Paused by you" });
+    pushFeedEvent({ sid, kind: "info", own: true, verb: "paused by you" });
     handle.query.interrupt().catch((err) => {
       pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to pause: ${String(err)}` });
     });
@@ -69,9 +79,19 @@ export function deleteSession(sid: string): void {
 
   if (session.status !== "stopped" && session.status !== "done") {
     terminateAgentProcess(sid);
+  } else if (!getAgentSession(sid) && session.worktreePath && session.branch && session.worktreePath !== session.dir) {
+    // Crash-orphaned worktree: the session was restored from disk (no live
+    // handle), so terminateAgentProcess never runs — remove its worktree
+    // here or it lingers in <repo>-worktrees/ forever. Best-effort: the
+    // path may already be gone.
+    removeWorktree(session.dir, session.worktreePath).catch(() => {});
   }
   pushFeedEvent({ sid, kind: "info", own: true, verb: "deleted by you" });
   pushSessionRemove(sid);
+  // The session's transcript and grants go with it — leaving them behind
+  // leaked them into memory and state.json for the life of the install.
+  pushTranscriptRemove(sid);
+  for (const grant of state.grants.filter((g) => g.sid === sid)) removeGrant(grant.id);
 }
 
 export function sendMessage(sid: string, text: string): void {
@@ -87,8 +107,9 @@ export function sendMessage(sid: string, text: string): void {
 // time and may already have commits on it.
 export function renameSession(sid: string, rawName: string): void {
   const session = findSession(sid);
-  const baseName = rawName.trim();
-  if (!baseName) throw new Error("name is required");
+  const trimmed = rawName.trim();
+  if (!trimmed) throw new Error("name is required");
+  const baseName = uniqueBaseName(trimmed, sid);
   const name = session.teamId ? `${session.lead ? "Lead" : "Worker"} · ${baseName}` : baseName;
   pushSessionPatch(sid, { name, baseName, short: slugFrom(baseName) });
   pushFeedEvent({ sid, kind: "info", own: true, verb: `renamed to "${baseName}"` });

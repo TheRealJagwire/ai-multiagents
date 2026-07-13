@@ -23,6 +23,7 @@ import {
   patchSession,
   removeGrant,
   removeSessionLocally,
+  removeTranscriptLocally,
   replaceApiKeyStatus,
   replaceCatchUpMissedSchedules,
   replaceMcpConfigs,
@@ -70,16 +71,25 @@ export function App() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
 
-    fetchSnapshot().then((snapshot) => {
-      ingestSnapshot(snapshot);
-      unsubscribe = subscribeToEvents({
+    // The backend may not be up yet (dev restarts, packaged-app boot
+    // order) — without the retry, a failed first snapshot left the app
+    // silently empty forever.
+    const load = () => {
+      fetchSnapshot().then((snapshot) => {
+        if (cancelled) return;
+        connected.value = true;
+        ingestSnapshot(snapshot);
+        unsubscribe = subscribeToEvents({
         onFeedEvent: ingestFeedEvent,
         onSessionPatch: patchSession,
         onEventPatch: patchEvent,
         onGrantAdded: addGrant,
         onGrantRevoked: (id) => removeGrant(id),
         onTranscriptMessage: ingestTranscriptMessage,
+        onTranscriptRemoved: removeTranscriptLocally,
         onTeamsReplaced: replaceTeams,
         onSessionAdded: addSession,
         onSessionRemoved: removeSessionLocally,
@@ -88,10 +98,20 @@ export function App() {
         onCatchUpMissedSchedulesReplaced: replaceCatchUpMissedSchedules,
         onApiKeyStatusReplaced: replaceApiKeyStatus,
         onConnectionChange: handleConnectionChange,
+        });
+      }).catch(() => {
+        if (cancelled) return;
+        connected.value = false;
+        retryTimer = setTimeout(load, 1500);
       });
-    });
+    };
+    load();
 
-    return () => unsubscribe?.();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      unsubscribe?.();
+    };
   }, []);
 
   useEffect(() => {

@@ -43,7 +43,7 @@ export function configFromEnv(): HookConfig | null {
     board,
     base: Deno.env.get("BOARD_URL") ?? "http://localhost:8000/api/orchestration",
     token: Deno.env.get("ORCHESTRATION_TOKEN") ?? undefined,
-    stateDir: Deno.env.get("TMPDIR") ?? "/tmp",
+    stateDir: Deno.env.get("TMPDIR") ?? Deno.env.get("TEMP") ?? Deno.env.get("TMP") ?? "/tmp",
     agentName: Deno.env.get("BOARD_AGENT_NAME") ?? undefined,
     agentRole: Deno.env.get("BOARD_AGENT_ROLE") ?? undefined,
   };

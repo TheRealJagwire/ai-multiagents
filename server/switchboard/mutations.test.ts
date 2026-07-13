@@ -84,6 +84,28 @@ describe("mutations publish the right topic and mutate state", () => {
     assertEquals(lastMessage(), { event: "transcript-message", data: { sid: "s-2", message: { k: "text", text: "other" } } });
   });
 
+  it("pushTranscriptRemove drops the session's transcript and publishes transcript-removed", () => {
+    mutations.pushTranscriptMessage("s-1", { k: "text", text: "hello" });
+    mutations.pushTranscriptRemove("s-1");
+
+    assertEquals(state.transcripts["s-1"], undefined);
+    assertEquals(lastMessage(), { event: "transcript-removed", data: { sid: "s-1" } });
+
+    // Removing an absent transcript is a silent no-op — no phantom event.
+    const before = received.length;
+    mutations.pushTranscriptRemove("never-existed");
+    assertEquals(received.length, before);
+  });
+
+  it("the in-memory feed is capped — old events fall off the end", () => {
+    for (let i = 0; i < 2010; i++) {
+      mutations.pushFeedEvent({ sid: "s-1", kind: "info", verb: `event ${i}`, own: false });
+    }
+    assertEquals(state.events.length, 2000);
+    assertEquals(state.events[0].verb, "event 2009", "newest kept");
+    assertEquals(state.events.at(-1)?.verb, "event 10", "oldest dropped");
+  });
+
   it("pushApiKeyStatusReplace carries status only — never key material", () => {
     mutations.pushApiKeyStatusReplace(true, "abcd");
     assertEquals(state.apiKeyConfigured, true);

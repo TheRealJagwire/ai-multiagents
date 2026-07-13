@@ -333,8 +333,21 @@ function handleMessage(sid: string, message: SDKMessage): void {
     }
 
     case "result": {
+      const patch: Record<string, unknown> = {};
       const cost = anyMessage.total_cost_usd;
-      if (typeof cost === "number") pushSessionPatch(sid, { cost });
+      if (typeof cost === "number") patch.cost = cost;
+      // Honest context gauge: prompt-side tokens of the last turn (fresh +
+      // cache reads + cache writes) against the model's actual window from
+      // modelUsage — before this, ctx sat at its spawn-time placeholder.
+      const usage = anyMessage.usage as Record<string, unknown> | undefined;
+      if (usage && typeof usage === "object") {
+        const n = (v: unknown) => (typeof v === "number" ? v : 0);
+        const used = n(usage.input_tokens) + n(usage.cache_read_input_tokens) + n(usage.cache_creation_input_tokens);
+        const modelUsage = anyMessage.modelUsage as Record<string, { contextWindow?: number }> | undefined;
+        const window = modelUsage ? Object.values(modelUsage).find((m) => typeof m?.contextWindow === "number")?.contextWindow : undefined;
+        if (used > 0) patch.ctx = Math.min(100, Math.round((used / (window || 200_000)) * 100));
+      }
+      if (Object.keys(patch).length > 0) pushSessionPatch(sid, patch as Partial<import("../../src/switchboard/types.ts").Session>);
       // A "result" marks the end of one turn, not the end of the session —
       // more messages (approvals, chat replies, retries) can still arrive
       // via the same queue, so this deliberately does not set status "done".

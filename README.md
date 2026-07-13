@@ -140,4 +140,4 @@ Roughly in priority order:
 4. **Configurable agent setup** — let a spawn specify a different system prompt or tool restriction instead of always using the one shared `WORKER_SYSTEM_PROMPT`.
 5. **Artifact review** — investigate watching the worktree for file changes (or diffing against the base ref) to reconstruct the review-gate flow.
 6. **Milestone tracking** — derive `msDone`/`msTotal` from some structured signal (e.g. counting `assistant` text messages, or tool-call milestones) instead of leaving them static.
-7. **Multi-user / remote access** — the app currently assumes one local user; there's no auth layer beyond the orchestration server's opt-in bearer token if this were ever exposed beyond localhost.
+7. **Multi-user / remote access** — the app assumes one local user. The server binds to 127.0.0.1 by default (`SWITCHBOARD_HOST` overrides), but there's no auth layer beyond the orchestration server's opt-in bearer token if it were ever deliberately exposed.

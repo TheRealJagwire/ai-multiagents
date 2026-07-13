@@ -3,8 +3,12 @@ import { findEvent, findSession, nextId, state } from "./state.ts";
 import { publish } from "./bus.ts";
 import { persistStateSoon } from "./state-store.ts";
 
+// In-memory cap (larger than the 1000 persisted): without one, a busy
+// week-long run grows the feed — and every /snapshot payload — forever.
+const MAX_FEED_EVENTS = 2000;
+
 export function appendEvent(event: FeedEvent): void {
-  state.events = [event, ...state.events];
+  state.events = [event, ...state.events].slice(0, MAX_FEED_EVENTS);
   publish("feed-event", event);
   persistStateSoon();
 }
@@ -36,6 +40,16 @@ export function addGrant(sid: string, pattern: string): Grant {
   publish("grant-added", grant);
   persistStateSoon();
   return grant;
+}
+
+// Deleting a session must drop its transcript too — before this existed,
+// every deleted session's transcript lived (and persisted) forever.
+export function pushTranscriptRemove(sid: string): void {
+  if (!(sid in state.transcripts)) return;
+  const { [sid]: _removed, ...rest } = state.transcripts;
+  state.transcripts = rest;
+  publish("transcript-removed", { sid });
+  persistStateSoon();
 }
 
 export function pushTranscriptMessage(sid: string, message: TranscriptMessage): void {

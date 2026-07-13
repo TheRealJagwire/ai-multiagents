@@ -58,6 +58,15 @@ export async function createNewRepo(dir: string): Promise<void> {
   try {
     const stat = await Deno.stat(dir);
     if (!stat.isDirectory) throw new Error(`not a directory: ${dir}`);
+    // Already a git repo? Treat as created — this is what makes a
+    // RECURRING scheduled spawn with createNew work past its first
+    // occurrence instead of erroring every time after.
+    try {
+      await Deno.stat(join(dir, ".git"));
+      return;
+    } catch {
+      // not a repo — fall through to the empty-dir check
+    }
     for await (const _entry of Deno.readDir(dir)) {
       throw new Error(`directory already exists and is not empty: ${dir}`);
     }

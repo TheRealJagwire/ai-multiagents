@@ -81,6 +81,11 @@ async function writeNow(schedules: Schedule[]): Promise<void> {
   // complete contents, never a partial write.
   const tmpFile = `${SCHEDULES_FILE}.tmp-${crypto.randomUUID()}`;
   await Deno.writeTextFile(tmpFile, JSON.stringify(schedules, null, 2));
+  try {
+    await Deno.chmod(tmpFile, 0o600);
+  } catch {
+    // no POSIX modes on this platform
+  }
   await Deno.rename(tmpFile, SCHEDULES_FILE);
 }
 

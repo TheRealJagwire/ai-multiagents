@@ -210,8 +210,12 @@ export async function setCatchUpMissedSchedules(value: boolean): Promise<void> {
   }
 }
 
+// Mirrors the backend's in-memory cap so a long-lived tab doesn't outgrow
+// the server's own bound.
+const MAX_FEED_EVENTS = 2000;
+
 export function ingestFeedEvent(event: FeedEvent): void {
-  events.value = [event, ...events.value];
+  events.value = [event, ...events.value].slice(0, MAX_FEED_EVENTS);
 }
 
 export function patchSession(id: string, patch: Partial<Session>): void {
@@ -232,6 +236,11 @@ export function removeGrant(id: string): void {
 
 export function ingestTranscriptMessage(sid: string, message: TranscriptMessage): void {
   transcripts.value = { ...transcripts.value, [sid]: [...(transcripts.value[sid] ?? []), message] };
+}
+
+export function removeTranscriptLocally(sid: string): void {
+  const { [sid]: _removed, ...rest } = transcripts.value;
+  transcripts.value = rest;
 }
 
 export function replaceTeams(nextTeams: Team[]): void {

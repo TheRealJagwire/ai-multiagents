@@ -12,6 +12,7 @@ export interface EventHandlers {
   onGrantAdded: (grant: Grant) => void;
   onGrantRevoked: (id: string) => void;
   onTranscriptMessage: (sid: string, message: TranscriptMessage) => void;
+  onTranscriptRemoved: (sid: string) => void;
   onTeamsReplaced: (teams: Team[]) => void;
   onSessionAdded: (session: Session) => void;
   onSessionRemoved: (id: string) => void;
@@ -70,6 +71,11 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
       message: TranscriptMessage;
     };
     handlers.onTranscriptMessage(sid, transcriptMessage);
+  });
+
+  source.addEventListener("transcript-removed", (message) => {
+    const { sid } = JSON.parse((message as MessageEvent).data) as { sid: string };
+    handlers.onTranscriptRemoved(sid);
   });
 
   source.addEventListener("teams-replaced", (message) => {

@@ -67,6 +67,20 @@ function startWorktreeAndSession(
   });
 }
 
+// The name is the primary identifier users see — two sessions sharing one
+// would defeat the point. Explicit names and renames get a numeric suffix
+// when taken (the generator already collision-checks itself). `excludeSid`
+// lets a rename keep its own current name.
+export function uniqueBaseName(desired: string, excludeSid?: string): string {
+  const taken = new Set(
+    state.sessions.filter((s) => s.id !== excludeSid).map((s) => s.baseName.toLowerCase()),
+  );
+  if (!taken.has(desired.toLowerCase())) return desired;
+  let i = 2;
+  while (taken.has(`${desired.toLowerCase()} ${i}`)) i++;
+  return `${desired} ${i}`;
+}
+
 // Slug for branch/worktree names and the compact UI chip — fed the
 // session's NAME, never its task text (exported for session rename).
 export function slugFrom(text: string): string {
@@ -95,8 +109,10 @@ function makeSession(
     name?: string;
   },
 ): Session {
-  const baseName = opts.name?.trim() ||
-    generateSessionName(state.sessions.map((s) => s.baseName));
+  const explicit = opts.name?.trim();
+  const baseName = explicit
+    ? uniqueBaseName(explicit)
+    : generateSessionName(state.sessions.map((s) => s.baseName));
   const short = slugFrom(baseName);
   return {
     id,
