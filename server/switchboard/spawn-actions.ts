@@ -16,6 +16,7 @@ import {
   worktreeSlug,
 } from "./git-worktree.ts";
 import { parseSpecFile } from "./team-spec.ts";
+import { generateSessionName } from "./session-names.ts";
 import { parseCoordination, parseEffort, parseModel, parseStringArray } from "./parse-body.ts";
 import { join } from "jsr:@std/path";
 
@@ -28,10 +29,11 @@ function startWorktreeAndSession(
   effort: Effort,
   mcpConfigIds: string[],
   useWorktree: boolean,
-  onSpawnWorker?: (task: string) => Promise<SpawnWorkerResult>,
+  // The session's `short` (derived from its name, not its task) — branch
+  // and worktree slugs carry the session's identity.
+  short: string,
+  onSpawnWorker?: (task: string, name?: string) => Promise<SpawnWorkerResult>,
 ): void {
-  const short = shortFrom(task);
-
   (async () => {
     if (!useWorktree) {
       await assertDirExists(dir);
@@ -65,7 +67,9 @@ function startWorktreeAndSession(
   });
 }
 
-function shortFrom(text: string): string {
+// Slug for branch/worktree names and the compact UI chip — fed the
+// session's NAME, never its task text (exported for session rename).
+export function slugFrom(text: string): string {
   const short = text
     .toLowerCase()
     .split(/\s+/)
@@ -77,7 +81,6 @@ function shortFrom(text: string): string {
 
 function makeSession(
   id: string,
-  task: string,
   opts: {
     teamId: string | null;
     lead: boolean;
@@ -87,14 +90,19 @@ function makeSession(
     dir: string;
     mcpConfigIds: string[];
     useWorktree: boolean;
+    // Explicit name from the spawner; falls back to a generated one. The
+    // name identifies the session to the user — the task prompt does not.
+    name?: string;
   },
 ): Session {
-  const short = shortFrom(task);
+  const baseName = opts.name?.trim() ||
+    generateSessionName(state.sessions.map((s) => s.baseName));
+  const short = slugFrom(baseName);
   return {
     id,
-    name: `${opts.rolePrefix}${short}`,
+    name: `${opts.rolePrefix}${baseName}`,
     short,
-    baseName: short,
+    baseName,
     teamId: opts.teamId,
     lead: opts.lead,
     status: "running",
@@ -128,9 +136,10 @@ export function spawnSolo(
   createNew: boolean,
   mcpConfigIds: string[],
   useWorktree: boolean,
+  name?: string,
 ): void {
   const trimmedTask = task.trim() || "New task";
-  const session = makeSession(nextId("s"), trimmedTask, {
+  const session = makeSession(nextId("s"), {
     teamId: null,
     lead: false,
     model,
@@ -139,10 +148,8 @@ export function spawnSolo(
     dir,
     mcpConfigIds,
     useWorktree,
+    name,
   });
-  const displayName = trimmedTask.length > 26 ? `${trimmedTask.slice(0, 24)}…` : trimmedTask;
-  session.name = displayName;
-  session.baseName = displayName;
 
   pushSessionAdd(session);
   pushTranscriptMessage(session.id, { k: "note", text: `Task from you: ${trimmedTask}` });
@@ -153,14 +160,14 @@ export function spawnSolo(
   if (createNew && useWorktree) {
     pushSessionPatch(session.id, { statusLine: "Creating repository…" });
     createNewRepo(dir)
-      .then(() => startWorktreeAndSession(session.id, dir, "HEAD", trimmedTask, model, effort, mcpConfigIds, true))
+      .then(() => startWorktreeAndSession(session.id, dir, "HEAD", trimmedTask, model, effort, mcpConfigIds, true, session.short))
       .catch((err) => {
         pushSessionPatch(session.id, { status: "error", statusLine: "Failed to start", phase: "blocked" });
         pushFeedEvent({ sid: session.id, kind: "error", own: false, verb: `failed to create repository: ${String(err)}` });
       });
     return;
   }
-  startWorktreeAndSession(session.id, dir, baseRef, trimmedTask, model, effort, mcpConfigIds, useWorktree);
+  startWorktreeAndSession(session.id, dir, baseRef, trimmedTask, model, effort, mcpConfigIds, useWorktree, session.short);
 }
 
 export function spawnIntoTeam(
@@ -169,10 +176,11 @@ export function spawnIntoTeam(
   model: Model,
   effort: Effort,
   baseRefOverride?: string,
+  name?: string,
 ): void {
   const team = state.teams.find((t) => t.id === teamId);
   const trimmedTask = task.trim() || "New task";
-  const session = makeSession(nextId("s"), trimmedTask, {
+  const session = makeSession(nextId("s"), {
     teamId,
     lead: false,
     model,
@@ -181,6 +189,7 @@ export function spawnIntoTeam(
     dir: team?.dir ?? "",
     mcpConfigIds: team?.mcpConfigIds ?? [],
     useWorktree: team?.useWorktree ?? true,
+    name,
   });
 
   pushSessionAdd(session);
@@ -206,6 +215,7 @@ export function spawnIntoTeam(
     effort,
     team.mcpConfigIds,
     team.useWorktree,
+    session.short,
   );
 }
 
@@ -214,8 +224,8 @@ export function spawnIntoTeam(
 // its own team. Capped so a lead can't runaway-spawn.
 const MAX_AUTONOMOUS_WORKERS = 8;
 
-function makeSpawnWorkerCallback(teamId: string): (task: string) => Promise<SpawnWorkerResult> {
-  return async (task: string) => {
+function makeSpawnWorkerCallback(teamId: string): (task: string, name?: string) => Promise<SpawnWorkerResult> {
+  return async (task: string, name?: string) => {
     const team = state.teams.find((t) => t.id === teamId);
     const lead = state.sessions.find((s) => s.teamId === teamId && s.lead);
     if (!team || !lead?.branch) return { ok: false, error: "team or lead not ready yet" };
@@ -225,7 +235,7 @@ function makeSpawnWorkerCallback(teamId: string): (task: string) => Promise<Spaw
       return { ok: false, error: `worker limit reached (${MAX_AUTONOMOUS_WORKERS} max)` };
     }
 
-    spawnIntoTeam(task, teamId, "sonnet", "medium", lead.branch);
+    spawnIntoTeam(task, teamId, "sonnet", "medium", lead.branch, name);
     return { ok: true };
   };
 }
@@ -253,7 +263,7 @@ export function spawnTeam(
   createNew: boolean,
   coordination: TeamCoordination,
   mcpConfigIds: string[],
-  members: { task: string; model: Model; effort: Effort }[],
+  members: { task: string; model: Model; effort: Effort; name?: string }[],
   useWorktree: boolean,
 ): void {
   const trimmedName = name.trim() || "New team";
@@ -276,7 +286,7 @@ export function spawnTeam(
 
   const tasks = activeRows.map((row, i) => row.task.trim() || (i === 0 ? "Coordinate the work" : `Task ${i + 1}`));
   const sessions: Session[] = activeRows.map((row, i) =>
-    makeSession(nextId("s"), tasks[i], {
+    makeSession(nextId("s"), {
       teamId,
       lead: i === 0,
       model: row.model,
@@ -285,6 +295,7 @@ export function spawnTeam(
       dir,
       mcpConfigIds,
       useWorktree,
+      name: row.name,
     })
   );
 
@@ -337,6 +348,7 @@ export function spawnTeam(
         session.effort,
         mcpConfigIds,
         useWorktree,
+        session.short,
         i === 0 ? onSpawnWorker : undefined,
       );
     });
@@ -386,6 +398,7 @@ export function spawnFromBody(body: Record<string, unknown>): void {
           task: typeof member.task === "string" ? member.task : "",
           model: parseModel(member.model),
           effort: parseEffort(member.effort),
+          name: typeof member.name === "string" ? member.name : undefined,
         };
       })
       : [];
@@ -401,7 +414,8 @@ export function spawnFromBody(body: Record<string, unknown>): void {
   const createNew = body.createNew === true;
   const useWorktree = body.useWorktree !== false;
   const mcpConfigIds = parseStringArray(body.mcpConfigIds);
-  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds, useWorktree);
+  const name = typeof body.name === "string" ? body.name : undefined;
+  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds, useWorktree, name);
 }
 
 // Sequenced mode: reads the lead's SWITCHBOARD_TASKS.md and spawns one
@@ -446,7 +460,9 @@ export function startWorkers(teamId: string): void {
 
     pushTeamsReplace(state.teams.map((t) => (t.id === teamId ? { ...t, workersStarted: true } : t)));
     for (const specTask of specTasks) {
-      spawnIntoTeam(specTask.task, teamId, "sonnet", "medium", leadBranch);
+      // The lead's "## heading" labels double as worker names — the lead
+      // already picked a short human handle for each task.
+      spawnIntoTeam(specTask.task, teamId, "sonnet", "medium", leadBranch, specTask.label || undefined);
     }
     pushFeedEvent({
       sid: leadId,

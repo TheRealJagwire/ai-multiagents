@@ -2,6 +2,7 @@ import { findSession, state } from "./state.ts";
 import { pushFeedEvent, pushSessionPatch, pushSessionRemove } from "./mutations.ts";
 import { getAgentSession, unregisterAgentSession } from "./agent-registry.ts";
 import { removeWorktree } from "./git-worktree.ts";
+import { slugFrom } from "./spawn-actions.ts";
 
 export function togglePause(sid: string): void {
   const session = findSession(sid);
@@ -78,4 +79,17 @@ export function sendMessage(sid: string, text: string): void {
   if (!trimmed) return;
 
   getAgentSession(sid)?.pushMessage(trimmed);
+}
+
+// The name is the session's user-facing identity (independent of its task
+// prompt), so renaming updates the display name, the role-prefixed variant,
+// and the short chip — but never the git branch, which was cut at spawn
+// time and may already have commits on it.
+export function renameSession(sid: string, rawName: string): void {
+  const session = findSession(sid);
+  const baseName = rawName.trim();
+  if (!baseName) throw new Error("name is required");
+  const name = session.teamId ? `${session.lead ? "Lead" : "Worker"} · ${baseName}` : baseName;
+  pushSessionPatch(sid, { name, baseName, short: slugFrom(baseName) });
+  pushFeedEvent({ sid, kind: "info", own: true, verb: `renamed to "${baseName}"` });
 }

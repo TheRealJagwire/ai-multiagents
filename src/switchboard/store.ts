@@ -20,6 +20,7 @@ export interface DraftMember {
   task: string;
   model: Model;
   effort: Effort;
+  name: string; // optional display name; "" = auto-generate
 }
 
 export type ActivityFilter = "all" | "unread";
@@ -77,6 +78,9 @@ export const digestDismissed = signal(false);
 export const awaySince = signal<number | null>(null);
 export const selectedSessionId = signal<string | null>(null);
 export const confirmStop = signal(false);
+// Non-null while the open session's name is being edited in SessionPane —
+// holds the draft text; null = not renaming.
+export const renameDraft = signal<string | null>(null);
 // Keyed by session id so switching between sessions never wipes a
 // half-typed message — each session keeps its own draft.
 export const chatDrafts = signal<Record<string, string>>({});
@@ -113,6 +117,8 @@ export const memberModel = signal<Model>("sonnet");
 export const memberEffort = signal<Effort>("medium");
 export const draftMembers = signal<DraftMember[]>([]);
 export const spawnDir = signal("");
+// Optional display name for solo/into-team spawns; "" = auto-generate.
+export const spawnSessionName = signal("");
 export const spawnBaseRef = signal("HEAD");
 export const spawnCreateNew = signal(false);
 export const spawnNoWorktree = signal(false);

@@ -7,6 +7,7 @@ import {
   eventsById,
   grants,
   now,
+  renameDraft,
   selectedSession,
   selectedTranscript,
   sessionsById,
@@ -21,13 +22,17 @@ import {
   cancelPendingEffort,
   cancelPendingModel,
   cancelStop,
+  cancelRenameSession,
   closeSession,
+  commitRenameSession,
   confirmDeleteSession,
   confirmStopSession,
   denyEvent,
   queueModelChange,
   sendMessage,
   setChatText,
+  setRenameDraft,
+  startRenameSession,
   togglePause,
   toggleGrantsPopover,
 } from "../actions.ts";
@@ -173,7 +178,46 @@ export function SessionPane() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span className="sb-dot" style={{ width: 9, height: 9, background: colors.dot }} />
-          <span style={{ fontSize: 14.5, fontWeight: 700 }}>{session.name}</span>
+          {renameDraft.value !== null
+            ? (
+              <input
+                autofocus
+                value={renameDraft.value}
+                onInput={(e) => setRenameDraft((e.target as HTMLInputElement).value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitRenameSession(session.id);
+                  // Escape must not bubble to the global handler, which
+                  // would close the whole pane instead of just the edit.
+                  else if (e.key === "Escape") {
+                    e.stopPropagation();
+                    cancelRenameSession();
+                  }
+                }}
+                onBlur={() => void commitRenameSession(session.id)}
+                aria-label="Session name"
+                style={{
+                  fontSize: 14.5,
+                  fontWeight: 700,
+                  color: "var(--sb-text-1)",
+                  border: "1px solid var(--sb-border-3)",
+                  borderRadius: 7,
+                  padding: "2px 8px",
+                  outline: "none",
+                  width: 200,
+                }}
+              />
+            )
+            : (
+              <button
+                type="button"
+                onClick={() => startRenameSession(session.baseName)}
+                title="Rename session"
+                aria-label={`Rename session ${session.name}`}
+                style={{ fontSize: 14.5, fontWeight: 700, color: "var(--sb-text-1)", cursor: "text", padding: 0, textAlign: "left" }}
+              >
+                {session.name}
+              </button>
+            )}
           <span
             style={{
               fontSize: 10.5,

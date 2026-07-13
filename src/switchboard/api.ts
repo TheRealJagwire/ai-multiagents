@@ -268,6 +268,10 @@ export function setCatchUpMissedSchedules(value: boolean): Promise<void> {
   return put(`/settings`, { catchUpMissedSchedules: value });
 }
 
+export function renameSession(id: string, name: string): Promise<void> {
+  return post(`/sessions/${id}/rename`, { name });
+}
+
 export function setApiKey(key: string): Promise<void> {
   return post(`/settings/api-key`, { key });
 }

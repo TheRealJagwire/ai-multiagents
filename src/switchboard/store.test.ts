@@ -188,8 +188,8 @@ describe("spawnValidationError", () => {
     promptText.value = "goal";
     spawnDir.value = "/abs/repo";
     draftMembers.value = [
-      { task: "lead work", model: "sonnet", effort: "medium" },
-      { task: "", model: "sonnet", effort: "medium" },
+      { task: "lead work", model: "sonnet", effort: "medium", name: "" },
+      { task: "", model: "sonnet", effort: "medium", name: "" },
     ];
     assertEquals(spawnValidationError.value, "Every member needs a task");
 

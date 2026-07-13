@@ -5,7 +5,7 @@ import { state } from "./state.ts";
 import { initPersistedState } from "./state-store.ts";
 import { subscribe } from "./bus.ts";
 import { applyAltFix, approveEvent, denyEvent, retryEvent } from "./resolutions.ts";
-import { deleteSession, sendMessage, stopSession, togglePause } from "./session-actions.ts";
+import { deleteSession, renameSession, sendMessage, stopSession, togglePause } from "./session-actions.ts";
 import {
   cancelMove,
   cancelPendingEffort,
@@ -114,6 +114,14 @@ switchboardApp.post("/sessions/:id/toggle-pause", (c) => {
 
 switchboardApp.post("/sessions/:id/stop", (c) => {
   stopSession(c.req.param("id"));
+  return c.body(null, 204);
+});
+
+switchboardApp.post("/sessions/:id/rename", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) return c.text("name is required", 400);
+  renameSession(c.req.param("id"), name);
   return c.body(null, 204);
 });
 

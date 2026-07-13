@@ -14,6 +14,7 @@ import {
   catchUpMissedSchedules,
   chatDrafts,
   confirmStop,
+  renameDraft,
   connected,
   deleteSessionConfirm,
   deleteTeamConfirm,
@@ -69,6 +70,7 @@ import {
   spawnBaseRef,
   spawnCreateNew,
   spawnDir,
+  spawnSessionName,
   spawnError,
   spawnLeadPlans,
   spawnMcpConfigIds,
@@ -299,6 +301,32 @@ export function dismissDigest(): void {
 export function openSession(sid: string): void {
   selectedSessionId.value = sid;
   confirmStop.value = false;
+  renameDraft.value = null;
+}
+
+// --- Session rename (the name is the session's user-facing identity) ---
+
+export function startRenameSession(currentBaseName: string): void {
+  renameDraft.value = currentBaseName;
+}
+
+export function setRenameDraft(value: string): void {
+  renameDraft.value = value;
+}
+
+export function cancelRenameSession(): void {
+  renameDraft.value = null;
+}
+
+export async function commitRenameSession(sid: string): Promise<void> {
+  const name = (renameDraft.value ?? "").trim();
+  renameDraft.value = null;
+  if (!name) return;
+  try {
+    await api.renameSession(sid, name);
+  } catch (err) {
+    showErrorToast("Couldn't rename session", err);
+  }
 }
 
 export function closeSession(): void {
@@ -692,8 +720,8 @@ export async function revokeGrant(id: string): Promise<void> {
 
 function freshDraft(): DraftMember[] {
   return [
-    { task: "", model: "opus", effort: "high" },
-    { task: "", model: "sonnet", effort: "medium" },
+    { task: "", model: "opus", effort: "high", name: "" },
+    { task: "", model: "sonnet", effort: "medium", name: "" },
   ];
 }
 
@@ -709,6 +737,7 @@ function resetSpawnFields(mode: SpawnMode, teamId?: string): void {
   memberEffort.value = "medium";
   draftMembers.value = mode === "new" ? freshDraft() : [];
   spawnDir.value = "";
+  spawnSessionName.value = "";
   spawnBaseRef.value = "HEAD";
   spawnCreateNew.value = false;
   spawnNoWorktree.value = false;
@@ -752,6 +781,10 @@ export function setTeamName(value: string): void {
 
 export function setPromptText(value: string): void {
   promptText.value = value;
+}
+
+export function setSpawnSessionName(value: string): void {
+  spawnSessionName.value = value;
 }
 
 export function setTargetTeamId(id: string | null): void {
@@ -869,7 +902,7 @@ export function toggleSpawnMcpConfig(id: string): void {
 }
 
 export function addDraftMember(): void {
-  draftMembers.value = [...draftMembers.value, { task: "", model: "sonnet", effort: "medium" }];
+  draftMembers.value = [...draftMembers.value, { task: "", model: "sonnet", effort: "medium", name: "" }];
 }
 
 export function removeDraftMember(index: number): void {
@@ -899,6 +932,7 @@ export async function submitSpawn(): Promise<void> {
         model: memberModel.value,
         effort: memberEffort.value,
         teamId: targetTeamId.value,
+        name: spawnSessionName.value.trim() || undefined,
       });
     } else {
       const body = mode === "new"
@@ -922,6 +956,7 @@ export async function submitSpawn(): Promise<void> {
         })()
         : {
           mode: "solo",
+          name: spawnSessionName.value.trim() || undefined,
           task: promptText.value,
           model: memberModel.value,
           effort: memberEffort.value,

@@ -46,7 +46,7 @@ export type SpawnWorkerResult = { ok: true } | { ok: false; error: string };
 // tool that lets an "autonomous"-mode team lead spawn its own teammates.
 // The actual spawning logic lives in spawn-actions.ts and is handed in as a
 // plain callback — see SpawnOptions.onSpawnWorker below for why.
-function buildCoordinatorServer(onSpawnWorker: (task: string) => Promise<SpawnWorkerResult>): McpServerConfig {
+function buildCoordinatorServer(onSpawnWorker: (task: string, name?: string) => Promise<SpawnWorkerResult>): McpServerConfig {
   return createSdkMcpServer({
     name: "switchboard",
     tools: [
@@ -54,9 +54,14 @@ function buildCoordinatorServer(onSpawnWorker: (task: string) => Promise<SpawnWo
         "spawn_worker",
         "Spawn a new worker agent session as part of this team. The worker gets its own git worktree " +
           "branched from your current branch, so commit anything it needs to see before calling this.",
-        { task: z.string().describe("A clear, self-contained description of what this worker should do.") },
-        async ({ task }) => {
-          const result = await onSpawnWorker(task);
+        {
+          task: z.string().describe("A clear, self-contained description of what this worker should do."),
+          name: z.string().optional().describe(
+            "A short display name for this worker (e.g. \"API endpoint\"). How the human sees it in the UI — not the task itself.",
+          ),
+        },
+        async ({ task, name }) => {
+          const result = await onSpawnWorker(task, name);
           return {
             content: [{
               type: "text" as const,
@@ -152,7 +157,7 @@ export interface SpawnOptions {
   mcpConfigIds: string[];
   // Only set when spawning the lead of an "autonomous" team — regular
   // workers never receive it, so only a lead can grow its own team.
-  onSpawnWorker?: (task: string) => Promise<SpawnWorkerResult>;
+  onSpawnWorker?: (task: string, name?: string) => Promise<SpawnWorkerResult>;
 }
 
 export async function spawnAgentSession(sid: string, task: string, opts: SpawnOptions): Promise<void> {

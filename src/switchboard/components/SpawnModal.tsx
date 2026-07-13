@@ -14,6 +14,7 @@ import {
   spawnBaseRef,
   spawnCreateNew,
   spawnDir,
+  spawnSessionName,
   spawnError,
   spawnLeadPlans,
   spawnMcpConfigIds,
@@ -45,6 +46,7 @@ import {
   setSpawnBaseRef,
   setSpawnCreateNew,
   setSpawnDir,
+  setSpawnSessionName,
   setSpawnLeadPlans,
   setSpawnNoWorktree,
   setSpawnRecurrenceEvery,
@@ -373,6 +375,12 @@ export function SpawnModal() {
                         </span>
                       )}
                       <input
+                        placeholder="Name (optional)"
+                        value={member.name}
+                        onInput={(e) => setDraftMember(i, { name: (e.target as HTMLInputElement).value })}
+                        style={{ ...inputStyle, width: 110, flex: "none", padding: "6px 10px", fontSize: 12, background: "var(--sb-surface)" }}
+                      />
+                      <input
                         placeholder={i === 0 ? "e.g. Plan and coordinate the work" : "e.g. Research competitor pricing"}
                         value={member.task}
                         onInput={(e) => setDraftMember(i, { task: (e.target as HTMLInputElement).value })}
@@ -437,6 +445,15 @@ export function SpawnModal() {
           )
           : (
             <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={labelStyle}>Name (optional — auto-generated if blank)</div>
+                <input
+                  placeholder="e.g. Onboarding audit"
+                  value={spawnSessionName.value}
+                  onInput={(e) => setSpawnSessionName((e.target as HTMLInputElement).value)}
+                  style={inputStyle}
+                />
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={labelStyle}>What should this agent do?</div>
                 <textarea
