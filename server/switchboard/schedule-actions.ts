@@ -70,7 +70,9 @@ function computeNextRunAt(currentRunAt: number, recurrence: Recurrence): number 
 // schedule fires normally (a tick can only ever be ~15s late) and when
 // reconciling a long gap after the app was closed (could be days/weeks) —
 // either way, we never want to land on a still-past time.
-function advancePastNow(runAt: number, recurrence: Recurrence, now: number): number {
+// Exported for tests (like service.ts's sweepBoard) — pure calendar logic
+// that deserves direct coverage without driving the whole scheduler.
+export function advancePastNow(runAt: number, recurrence: Recurrence, now: number): number {
   let next = computeNextRunAt(runAt, recurrence);
   while (next <= now) next = computeNextRunAt(next, recurrence);
   return next;
@@ -154,7 +156,8 @@ export function startScheduler(): void {
 // occurrenceCount bump — it didn't run); a one-shot schedule is marked
 // "skipped" instead of being left "pending" (which would just fire on the
 // very next tick regardless).
-function reconcileMissedSchedule(schedule: Schedule, now: number): Schedule {
+// Exported for tests.
+export function reconcileMissedSchedule(schedule: Schedule, now: number): Schedule {
   if (schedule.status !== "pending" || schedule.runAt > now) return schedule;
   if (schedule.recurrence) {
     return { ...schedule, runAt: advancePastNow(schedule.runAt, schedule.recurrence, now) };

@@ -17,42 +17,55 @@
 //
 // Every network call is best-effort with a short timeout: a hook must
 // never hang or fail the session just because the board daemon is down.
+//
+// Structured as exported functions over an injected HookConfig (base URL,
+// state dir, …) with the CLI entry under import.meta.main, so tests can
+// drive the handlers against an in-process server (see board-hook.test.ts).
 
 import { globToRegExp } from "jsr:@std/path@^1/glob-to-regexp";
 import { relative } from "jsr:@std/path@^1/relative";
 
-const BOARD = Deno.env.get("AGENT_BOARD");
-if (!BOARD) Deno.exit(0);
+export interface HookConfig {
+  board: string;
+  base: string; // e.g. http://localhost:8000/api/orchestration
+  token?: string;
+  stateDir: string; // where per-session agent-identity files live
+  agentName?: string;
+  agentRole?: string;
+  timeoutMs?: number;
+}
 
-const BASE = Deno.env.get("BOARD_URL") ?? "http://localhost:8000/api/orchestration";
-const TOKEN = Deno.env.get("ORCHESTRATION_TOKEN");
+// null = the gate is closed (not a board worker session).
+export function configFromEnv(): HookConfig | null {
+  const board = Deno.env.get("AGENT_BOARD");
+  if (!board) return null;
+  return {
+    board,
+    base: Deno.env.get("BOARD_URL") ?? "http://localhost:8000/api/orchestration",
+    token: Deno.env.get("ORCHESTRATION_TOKEN") ?? undefined,
+    stateDir: Deno.env.get("TMPDIR") ?? "/tmp",
+    agentName: Deno.env.get("BOARD_AGENT_NAME") ?? undefined,
+    agentRole: Deno.env.get("BOARD_AGENT_ROLE") ?? undefined,
+  };
+}
 
-interface HookPayload {
+export interface HookPayload {
   session_id?: string;
   cwd?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
 }
 
-async function readPayload(): Promise<HookPayload> {
+async function api(cfg: HookConfig, method: string, path: string, body?: unknown): Promise<unknown | null> {
   try {
-    const raw = await new Response(Deno.stdin.readable).text();
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-async function api(method: string, path: string, body?: unknown): Promise<unknown | null> {
-  try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetch(`${cfg.base}${path}`, {
       method,
       headers: {
         "content-type": "application/json",
-        ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
+        ...(cfg.token ? { authorization: `Bearer ${cfg.token}` } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(cfg.timeoutMs ?? 3000),
     });
     if (!res.ok) {
       await res.body?.cancel();
@@ -65,9 +78,9 @@ async function api(method: string, path: string, body?: unknown): Promise<unknow
 }
 
 // Agent identity persists across hook invocations (each is a fresh
-// process) in a tmp file keyed by Claude Code session id.
-function stateFile(sessionId: string): string {
-  return `${Deno.env.get("TMPDIR") ?? "/tmp"}/board-agent-${sessionId}.json`;
+// process) in a file keyed by Claude Code session id.
+function stateFile(cfg: HookConfig, sessionId: string): string {
+  return `${cfg.stateDir}/board-agent-${sessionId}.json`;
 }
 
 interface AgentState {
@@ -75,17 +88,17 @@ interface AgentState {
   name: string;
 }
 
-function loadState(sessionId: string): AgentState | null {
+function loadState(cfg: HookConfig, sessionId: string): AgentState | null {
   try {
-    return JSON.parse(Deno.readTextFileSync(stateFile(sessionId)));
+    return JSON.parse(Deno.readTextFileSync(stateFile(cfg, sessionId)));
   } catch {
     return null;
   }
 }
 
 // Hook JSON output: additionalContext is injected into the model's context.
-function emitContext(hookEventName: string, text: string): void {
-  console.log(JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: text } }));
+function contextResult(hookEventName: string, text: string): string {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: text } });
 }
 
 interface HeartbeatResponse {
@@ -94,37 +107,42 @@ interface HeartbeatResponse {
   newEvents?: number;
 }
 
-async function sessionStart(payload: HookPayload): Promise<void> {
+async function sessionStart(cfg: HookConfig, payload: HookPayload): Promise<string | null> {
   const sid = payload.session_id ?? "unknown";
-  const name = Deno.env.get("BOARD_AGENT_NAME") ?? `worker-${sid.slice(0, 6)}`;
-  const role = Deno.env.get("BOARD_AGENT_ROLE") ?? "worker";
-  const agent = await api("POST", `/boards/${BOARD}/agents`, { name, role }) as { id?: string } | null;
+  const name = cfg.agentName ?? `worker-${sid.slice(0, 6)}`;
+  const role = cfg.agentRole ?? "worker";
+  const agent = await api(cfg, "POST", `/boards/${cfg.board}/agents`, { name, role }) as { id?: string } | null;
   if (!agent?.id) {
-    emitContext("SessionStart", `Board daemon at ${BASE} is unreachable or rejected registration — worker protocol is inactive. Say so and stop rather than working uncoordinated.`);
-    return;
+    return contextResult(
+      "SessionStart",
+      `Board daemon at ${cfg.base} is unreachable or rejected registration — worker protocol is inactive. Say so and stop rather than working uncoordinated.`,
+    );
   }
-  Deno.writeTextFileSync(stateFile(sid), JSON.stringify({ agentId: agent.id, name } satisfies AgentState));
-  const team = await api("GET", `/boards/${BOARD}/agents`) as Array<{ name: string; role: string; status: string; currentCardId?: string }> | null;
+  Deno.writeTextFileSync(stateFile(cfg, sid), JSON.stringify({ agentId: agent.id, name } satisfies AgentState));
+  const team = await api(cfg, "GET", `/boards/${cfg.board}/agents`) as
+    | Array<{ name: string; role: string; status: string; currentCardId?: string }>
+    | null;
   const teamLine = team
     ? team.map((a) => `${a.name}(${a.role}): ${a.status}${a.currentCardId ? ` on ${a.currentCardId.slice(-6).toLowerCase()}` : ""}`).join("; ")
     : "unavailable";
-  emitContext(
+  return contextResult(
     "SessionStart",
-    `You are registered on board '${BOARD}' as ${name} (agent_id: ${agent.id}). Follow the "Board worker protocol" section of CLAUDE.md. Team: ${teamLine}`,
+    `You are registered on board '${cfg.board}' as ${name} (agent_id: ${agent.id}). Follow the "Board worker protocol" section of CLAUDE.md. Team: ${teamLine}`,
   );
 }
 
-async function promptSubmit(payload: HookPayload): Promise<void> {
-  const state = loadState(payload.session_id ?? "unknown");
-  if (!state) return;
-  const hb = await api("POST", `/boards/${BOARD}/agents/${state.agentId}/heartbeat`, {}) as HeartbeatResponse | null;
-  if (!hb) return;
+async function promptSubmit(cfg: HookConfig, payload: HookPayload): Promise<string | null> {
+  const state = loadState(cfg, payload.session_id ?? "unknown");
+  if (!state) return null;
+  const hb = await api(cfg, "POST", `/boards/${cfg.board}/agents/${state.agentId}/heartbeat`, {}) as HeartbeatResponse | null;
+  if (!hb) return null;
   if ((hb.unreadMessages ?? 0) > 0 || (hb.newEvents ?? 0) > 0) {
-    emitContext(
+    return contextResult(
       "UserPromptSubmit",
-      `Board '${BOARD}': ${hb.unreadMessages ?? 0} unread message(s), ${hb.newEvents ?? 0} new event(s). Call check_messages / watch_events at your next checkpoint.`,
+      `Board '${cfg.board}': ${hb.unreadMessages ?? 0} unread message(s), ${hb.newEvents ?? 0} new event(s). Call check_messages / watch_events at your next checkpoint.`,
     );
   }
+  return null;
 }
 
 // Paths Edit/Write/NotebookEdit put the target file under, depending on tool.
@@ -133,62 +151,82 @@ function editedPath(input: Record<string, unknown> | undefined): string | null {
   return typeof p === "string" ? p : null;
 }
 
-async function postToolUse(payload: HookPayload): Promise<void> {
-  const state = loadState(payload.session_id ?? "unknown");
-  if (!state) return;
-  const hb = await api("POST", `/boards/${BOARD}/agents/${state.agentId}/heartbeat`, {}) as HeartbeatResponse | null;
+async function postToolUse(cfg: HookConfig, payload: HookPayload): Promise<string | null> {
+  const state = loadState(cfg, payload.session_id ?? "unknown");
+  if (!state) return null;
+  const hb = await api(cfg, "POST", `/boards/${cfg.board}/agents/${state.agentId}/heartbeat`, {}) as HeartbeatResponse | null;
   const cardId = hb?.agent?.currentCardId;
   const filePath = editedPath(payload.tool_input);
-  if (!cardId || !filePath) return;
-  const card = await api("GET", `/boards/${BOARD}/cards/${cardId}`) as { fileScope?: string[] } | null;
+  if (!cardId || !filePath) return null;
+  const card = await api(cfg, "GET", `/boards/${cfg.board}/cards/${cardId}`) as { fileScope?: string[] } | null;
   const scope = card?.fileScope ?? [];
-  if (scope.length === 0) return;
+  if (scope.length === 0) return null;
   // fileScope globs are repo-relative; the worker may be editing inside a
   // ../wt/card-* worktree, so relativize against the hook's cwd.
   const rel = payload.cwd ? relative(payload.cwd, filePath) : filePath;
   const inScope = scope.some((glob) => globToRegExp(glob, { extended: true, globstar: true }).test(rel));
   if (!inScope) {
-    emitContext(
+    return contextResult(
       "PostToolUse",
       `Warning: ${rel} is outside your card's fileScope (${scope.join(", ")}). Undo it, or message the affected card's holder before continuing (worker protocol step 3).`,
     );
   }
+  return null;
 }
 
-async function sessionEnd(payload: HookPayload): Promise<void> {
+async function sessionEnd(cfg: HookConfig, payload: HookPayload): Promise<string | null> {
   const sid = payload.session_id ?? "unknown";
-  const state = loadState(sid);
-  if (!state) return;
+  const state = loadState(cfg, sid);
+  if (!state) return null;
   // Release before going offline: releaseCard resets the agent to "idle",
   // so the offline heartbeat must come last.
-  const hb = await api("POST", `/boards/${BOARD}/agents/${state.agentId}/heartbeat`, {}) as HeartbeatResponse | null;
+  const hb = await api(cfg, "POST", `/boards/${cfg.board}/agents/${state.agentId}/heartbeat`, {}) as HeartbeatResponse | null;
   const cardId = hb?.agent?.currentCardId;
   if (cardId) {
-    await api("POST", `/boards/${BOARD}/cards/${cardId}/release`, { agentId: state.agentId, reason: "session ended" });
+    await api(cfg, "POST", `/boards/${cfg.board}/cards/${cardId}/release`, { agentId: state.agentId, reason: "session ended" });
   }
-  await api("POST", `/boards/${BOARD}/agents/${state.agentId}/heartbeat`, { status: "offline" });
+  await api(cfg, "POST", `/boards/${cfg.board}/agents/${state.agentId}/heartbeat`, { status: "offline" });
   try {
-    Deno.removeSync(stateFile(sid));
+    Deno.removeSync(stateFile(cfg, sid));
   } catch {
     // already gone — fine
   }
+  return null;
 }
 
-const payload = await readPayload();
-switch (Deno.args[0]) {
-  case "session-start":
-    await sessionStart(payload);
-    break;
-  case "prompt-submit":
-    await promptSubmit(payload);
-    break;
-  case "post-tool-use":
-    await postToolUse(payload);
-    break;
-  case "session-end":
-    await sessionEnd(payload);
-    break;
-  default:
-    console.error(`board-hook: unknown subcommand ${Deno.args[0]}`);
+export async function runHook(subcommand: string, payload: HookPayload, cfg: HookConfig): Promise<string | null> {
+  switch (subcommand) {
+    case "session-start":
+      return await sessionStart(cfg, payload);
+    case "prompt-submit":
+      return await promptSubmit(cfg, payload);
+    case "post-tool-use":
+      return await postToolUse(cfg, payload);
+    case "session-end":
+      return await sessionEnd(cfg, payload);
+    default:
+      throw new Error(`board-hook: unknown subcommand ${subcommand}`);
+  }
+}
+
+async function readPayload(): Promise<HookPayload> {
+  try {
+    const raw = await new Response(Deno.stdin.readable).text();
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+if (import.meta.main) {
+  const cfg = configFromEnv();
+  if (!cfg) Deno.exit(0);
+  const payload = await readPayload();
+  try {
+    const output = await runHook(Deno.args[0], payload, cfg);
+    if (output !== null) console.log(output);
+  } catch (err) {
+    console.error(String(err instanceof Error ? err.message : err));
     Deno.exit(1);
+  }
 }

@@ -5,6 +5,10 @@
 import { join } from "jsr:@std/path";
 
 export function appDataDir(): string {
+  // Tests (and anyone sandboxing the app) point this somewhere disposable —
+  // without it, a test run would read/write the real user's app data.
+  const override = Deno.env.get("SWITCHBOARD_DATA_DIR");
+  if (override) return override;
   const os = Deno.build.os;
   if (os === "darwin") {
     return join(Deno.env.get("HOME") ?? ".", "Library", "Application Support", "switchboard");

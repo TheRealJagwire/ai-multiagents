@@ -1,6 +1,6 @@
 # Automated-testing gap analysis and plan
 
-_Written 2026-07-12. Test style: Deno BDD (`describe`/`it` from `jsr:@std/testing/bdd`), in-memory `Deno.openKv(":memory:")` where KV is involved, real temp dirs where the filesystem is involved. Run everything with `deno task test`._
+_Written 2026-07-12; **P1–P4 implemented the same day** (see the test files named below — each priority's cases landed as written, plus a `SWITCHBOARD_DATA_DIR` env override in `app-data-dir.ts` so tests never touch real user data, `stopReaper()` for timer sanitizers, and a `runHook(cfg)` testability refactor of `tools/board-hook.ts`). This document remains as the map of what's covered and why. Test style: Deno BDD (`describe`/`it` from `jsr:@std/testing/bdd`), in-memory `Deno.openKv(":memory:")` where KV is involved, real temp dirs where the filesystem is involved. Run everything with `deno task test`._
 
 ## What's covered today
 
@@ -39,10 +39,13 @@ The service layer is tested, but the wrappers can still drift (wrong status code
 
 ### Infrastructure
 
-- `deno task test` added (runs `server/`). Extend to `tools/` when #9 lands.
+- `deno task test` runs `server/ src/ tools/`.
 - No CI exists; when the repo gets a remote pipeline, the task is the entry point.
 - Keep the convention: tests live next to the module (`x.test.ts`), BDD style, one `describe` per domain concept.
+- Isolation convention for anything touching disk: set `SWITCHBOARD_DATA_DIR` to a temp dir **before** a dynamic `await import(...)` of the module under test — file-path constants bind at import time.
 
-## Suggested order
+## Remaining (deliberately deferred)
 
-P1.1–P1.2 first (persistence — highest silent-failure risk, and both had real bugs this week), then P1.3–P1.5, then P2 as one unit ("HTTP contracts"), then P3, then P4.10 opportunistically.
+- Component rendering (P4.11) — DOM shim + preact renderer for low risk-per-effort; revisit if a rendering regression bites.
+- REST SSE stream endpoint (`/events/stream`) — its poll loop never ends, so a contract test needs an AbortController dance that wasn't worth it yet; the non-streaming `/events?since=` cursor is covered.
+- `agent-sessions.ts` / `spawn-actions.ts` — spawning real `claude` subprocesses; would need an SDK seam. The M5-style live pilot covers this end-to-end manually.

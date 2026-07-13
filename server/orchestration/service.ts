@@ -820,6 +820,14 @@ export function startReaper(kv: Deno.Kv): void {
   reaperTimer = setInterval(tick, REAPER_TICK_MS);
 }
 
+// Tests import routes.ts (whose top-level await boots the reaper) and must
+// clear the interval or Deno's timer sanitizer fails the run.
+export function stopReaper(): void {
+  if (reaperTimer === undefined) return;
+  clearInterval(reaperTimer);
+  reaperTimer = undefined;
+}
+
 // ---------- Summaries (shared by REST's board list and MCP's list_boards/get_board_status) ----------
 
 export interface BoardSummary extends Board {
