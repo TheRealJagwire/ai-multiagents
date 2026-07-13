@@ -1,5 +1,5 @@
 import { activeTab, grants, needsYouCount, pendingScheduleCount, runningCount, type Tab, theme, type ThemeMode } from "../store.ts";
-import { goToPinned, openMcpModal, openScheduledModal, openSettingsModal, openSpawnModal, setActiveTab, setTheme, toggleGrantsPopover } from "../actions.ts";
+import { goToPinned, openScheduledModal, openSettingsModal, openSpawnModal, setActiveTab, setTheme, toggleGrantsPopover } from "../actions.ts";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "feed", label: "Feed" },
@@ -117,22 +117,6 @@ export function TopBar() {
         }}
       >
         ⚙
-      </button>
-
-      <button
-        type="button"
-        onClick={openMcpModal}
-        style={{
-          padding: "6px 12px",
-          border: "1px solid var(--sb-border-3)",
-          borderRadius: 8,
-          fontSize: 11.5,
-          fontWeight: 600,
-          color: "var(--sb-text-3)",
-          cursor: "pointer",
-        }}
-      >
-        MCP servers
       </button>
 
       <button

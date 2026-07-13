@@ -1,5 +1,6 @@
 import { apiKeyConfigured, apiKeyDraft, apiKeyError, apiKeySaving, apiKeyTail, settingsModalOpen } from "../store.ts";
 import { clearApiKey, closeSettingsModal, saveApiKey } from "../actions.ts";
+import { McpConfigsSection } from "./McpConfigsSection.tsx";
 
 const inputStyle = {
   border: "1px solid var(--sb-border-3)",
@@ -35,7 +36,9 @@ export function SettingsModal() {
         onClick={(e) => e.stopPropagation()}
         className="sb-sbin"
         style={{
-          width: 480,
+          width: 560,
+          maxHeight: "86%",
+          overflowY: "auto",
           background: "var(--sb-surface)",
           borderRadius: "var(--sb-radius-modal)",
           boxShadow: "var(--sb-shadow-modal)",
@@ -137,6 +140,13 @@ export function SettingsModal() {
           <div style={{ fontSize: 11, color: "var(--sb-text-5)", lineHeight: 1.5 }}>
             Already-running sessions keep the credentials they started with; the change applies from the next spawn.
           </div>
+        </div>
+
+        <div style={{ height: 1, background: "var(--sb-border)", margin: "4px 0" }} />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>MCP servers</div>
+          <McpConfigsSection />
         </div>
       </div>
     </div>

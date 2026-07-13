@@ -166,7 +166,6 @@ export const theme = signal<ThemeMode>(loadTheme());
 export const spawnSubmitting = signal(false);
 
 // MCP config library modal
-export const mcpModalOpen = signal(false);
 export const mcpFormName = signal("");
 export const mcpFormTransport = signal<McpTransport>("stdio");
 export const mcpFormCommand = signal("");

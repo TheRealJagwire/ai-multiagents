@@ -9,7 +9,6 @@ import {
   approveEvent,
   closeGrantsPopover,
   closeKeyboardHelp,
-  closeMcpModal,
   closeReview,
   closeScheduledModal,
   closeSettingsModal,
@@ -39,7 +38,6 @@ import {
   focusedPinnedId,
   grantsOpen,
   keyboardHelpOpen,
-  mcpModalOpen,
   modalOpen,
   now,
   pinnedShowAll,
@@ -61,7 +59,6 @@ import { Toast } from "./components/Toast.tsx";
 import { ReviewModal } from "./components/ReviewModal.tsx";
 import { GrantsPopover } from "./components/GrantsPopover.tsx";
 import { SpawnModal } from "./components/SpawnModal.tsx";
-import { McpConfigsModal } from "./components/McpConfigsModal.tsx";
 import { ScheduledModal } from "./components/ScheduledModal.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { KeyboardHelp } from "./components/KeyboardHelp.tsx";
@@ -123,7 +120,6 @@ export function App() {
         if (keyboardHelpOpen.value) closeKeyboardHelp();
         else if (reviewOpen.value !== null) closeReview();
         else if (modalOpen.value) closeSpawnModal();
-        else if (mcpModalOpen.value) closeMcpModal();
         else if (settingsModalOpen.value) closeSettingsModal();
         else if (scheduledModalOpen.value) closeScheduledModal();
         else if (grantsOpen.value) closeGrantsPopover();
@@ -222,7 +218,6 @@ export function App() {
       <ReviewModal />
       <GrantsPopover />
       <SpawnModal />
-      <McpConfigsModal />
       <ScheduledModal />
       <SettingsModal />
       <KeyboardHelp />

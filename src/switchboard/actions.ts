@@ -41,7 +41,6 @@ import {
   mcpFormName,
   mcpFormTransport,
   mcpFormUrl,
-  mcpModalOpen,
   memberEffort,
   memberModel,
   modalMode,
@@ -158,6 +157,9 @@ export function replaceApiKeyStatus(configured: boolean, tail: string | null): v
 export function openSettingsModal(): void {
   apiKeyDraft.value = "";
   apiKeyError.value = null;
+  // The MCP server library lives in this modal now — open with a clean
+  // add-server form, never someone's abandoned half-edit.
+  resetMcpForm();
   settingsModalOpen.value = true;
 }
 
@@ -993,15 +995,6 @@ function resetMcpForm(): void {
   mcpFormUrl.value = "";
   mcpFormHeadersText.value = "";
   mcpEditingId.value = null;
-}
-
-export function openMcpModal(): void {
-  resetMcpForm();
-  mcpModalOpen.value = true;
-}
-
-export function closeMcpModal(): void {
-  mcpModalOpen.value = false;
 }
 
 // Pre-fills the form from an existing config so editing doesn't mean
