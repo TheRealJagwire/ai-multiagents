@@ -28,6 +28,8 @@ import {
   replaceCatchUpMissedSchedules,
   replaceMcpConfigs,
   replaceSchedules,
+  replaceSkills,
+  replaceSubagents,
   replaceTeams,
   toggleKeyboardHelp,
 } from "./actions.ts";
@@ -45,12 +47,12 @@ import {
   pinnedSorted,
   reviewOpen,
   scheduledModalOpen,
-  settingsModalOpen,
+  settingsSection,
   selectedSessionId,
   theme,
   unreadCount,
 } from "./store.ts";
-import { TopBar } from "./components/TopBar.tsx";
+import { NavRail } from "./components/NavRail.tsx";
 import { LeftRail } from "./components/LeftRail.tsx";
 import { FeedView } from "./components/FeedView.tsx";
 import { SessionsTab } from "./components/SessionsTab.tsx";
@@ -94,6 +96,8 @@ export function App() {
         onSessionAdded: addSession,
         onSessionRemoved: removeSessionLocally,
         onMcpConfigsReplaced: replaceMcpConfigs,
+        onSkillsReplaced: replaceSkills,
+        onSubagentsReplaced: replaceSubagents,
         onSchedulesReplaced: replaceSchedules,
         onCatchUpMissedSchedulesReplaced: replaceCatchUpMissedSchedules,
         onApiKeyStatusReplaced: replaceApiKeyStatus,
@@ -140,7 +144,7 @@ export function App() {
         if (keyboardHelpOpen.value) closeKeyboardHelp();
         else if (reviewOpen.value !== null) closeReview();
         else if (modalOpen.value) closeSpawnModal();
-        else if (settingsModalOpen.value) closeSettingsModal();
+        else if (settingsSection.value !== null) closeSettingsModal();
         else if (scheduledModalOpen.value) closeScheduledModal();
         else if (grantsOpen.value) closeGrantsPopover();
         else if (selectedSessionId.value !== null) closeSession();
@@ -212,28 +216,32 @@ export function App() {
         position: "relative",
       }}
     >
-      <TopBar />
-      {!connected.value && (
-        <div
-          style={{
-            padding: "6px 20px",
-            background: "var(--sb-error-bg)",
-            color: "var(--sb-error-text)",
-            fontSize: 12,
-            fontWeight: 600,
-            textAlign: "center",
-            flex: "none",
-          }}
-        >
-          Connection lost — reconnecting…
-        </div>
-      )}
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <LeftRail />
-        {activeTab.value === "feed" && <FeedView />}
-        {activeTab.value === "sessions" && <SessionsTab />}
-        {activeTab.value === "teams" && <TeamsTab />}
-        <SessionPane />
+        <NavRail />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          {!connected.value && (
+            <div
+              style={{
+                padding: "6px 20px",
+                background: "var(--sb-error-bg)",
+                color: "var(--sb-error-text)",
+                fontSize: 12,
+                fontWeight: 600,
+                textAlign: "center",
+                flex: "none",
+              }}
+            >
+              Connection lost — reconnecting…
+            </div>
+          )}
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <LeftRail />
+            {activeTab.value === "feed" && <FeedView />}
+            {activeTab.value === "sessions" && <SessionsTab />}
+            {activeTab.value === "teams" && <TeamsTab />}
+            <SessionPane />
+          </div>
+        </div>
       </div>
       <ReviewModal />
       <GrantsPopover />

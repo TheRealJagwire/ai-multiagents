@@ -45,6 +45,8 @@ function resetState(): void {
   state.grants = [];
   state.transcripts = {};
   state.mcpConfigs = [];
+  state.skills = [];
+  state.subagents = [];
   setIdCounter(0);
 }
 
@@ -77,7 +79,9 @@ describe("state-store", () => {
     state.events = [{ id: "e-3", ts: 1, sid: "s-1", kind: "info", verb: "did a thing", own: false, resolved: null }];
     state.grants = [{ id: "g-4", sid: "s-1", pattern: "git *", grantedAt: 1 }];
     state.transcripts = { "s-1": [{ k: "text", text: "hello" }] };
-    setIdCounter(4);
+    state.skills = [{ id: "sk-5", name: "House style", description: "", instructions: "x" }];
+    state.subagents = [{ id: "sub-6", name: "Reviewer", description: "", systemPrompt: "y", model: "sonnet", effort: "high" }];
+    setIdCounter(6);
     persistStateSoon();
     await waitForStateFile();
 
@@ -101,6 +105,8 @@ describe("state-store", () => {
 
     assertEquals(state.events.length, 1);
     assertEquals(state.grants.length, 1);
+    assertEquals(state.skills[0].name, "House style");
+    assertEquals(state.subagents[0].effort, "high");
   });
 
   it("idle sessions are live processes — restored as stopped like running ones", async () => {

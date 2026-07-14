@@ -7,6 +7,8 @@ export const state: Snapshot = {
   grants: [],
   transcripts: {},
   mcpConfigs: [],
+  skills: [],
+  subagents: [],
   schedules: [],
   catchUpMissedSchedules: false,
   apiKeyConfigured: false,

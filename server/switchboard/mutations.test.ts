@@ -19,6 +19,8 @@ beforeEach(() => {
   state.grants = [];
   state.transcripts = {};
   state.mcpConfigs = [];
+  state.skills = [];
+  state.subagents = [];
   setIdCounter(0);
   received = [];
   unsubscribe = subscribe((message) => received.push(message));
@@ -104,6 +106,18 @@ describe("mutations publish the right topic and mutate state", () => {
     assertEquals(state.events.length, 2000);
     assertEquals(state.events[0].verb, "event 2009", "newest kept");
     assertEquals(state.events.at(-1)?.verb, "event 10", "oldest dropped");
+  });
+
+  it("skills and subagents replace state and publish their topics", () => {
+    const skill = { id: "sk-1", name: "House style", description: "", instructions: "two-space indent" };
+    mutations.pushSkillsReplace([skill]);
+    assertEquals(state.skills, [skill]);
+    assertEquals(lastMessage(), { event: "skills-replaced", data: [skill] });
+
+    const subagent = { id: "sub-1", name: "Reviewer", description: "", systemPrompt: "review code", model: "sonnet" as const, effort: "medium" as const };
+    mutations.pushSubagentsReplace([subagent]);
+    assertEquals(state.subagents, [subagent]);
+    assertEquals(lastMessage(), { event: "subagents-replaced", data: [subagent] });
   });
 
   it("pushApiKeyStatusReplace carries status only — never key material", () => {

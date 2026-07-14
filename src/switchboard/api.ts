@@ -1,4 +1,4 @@
-import type { Effort, FeedEvent, Grant, McpConfig, Model, Schedule, Session, Snapshot, Team, TranscriptMessage } from "./types.ts";
+import type { Effort, FeedEvent, Grant, McpConfig, Model, Schedule, Session, Skill, Snapshot, SubagentPreset, Team, TranscriptMessage } from "./types.ts";
 
 export async function fetchSnapshot(): Promise<Snapshot> {
   const res = await fetch("/api/switchboard/snapshot");
@@ -17,6 +17,8 @@ export interface EventHandlers {
   onSessionAdded: (session: Session) => void;
   onSessionRemoved: (id: string) => void;
   onMcpConfigsReplaced: (configs: McpConfig[]) => void;
+  onSkillsReplaced: (skills: Skill[]) => void;
+  onSubagentsReplaced: (subagents: SubagentPreset[]) => void;
   onSchedulesReplaced: (schedules: Schedule[]) => void;
   onCatchUpMissedSchedulesReplaced: (value: boolean) => void;
   onApiKeyStatusReplaced: (configured: boolean, tail: string | null) => void;
@@ -96,6 +98,16 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
   source.addEventListener("mcp-configs-replaced", (message) => {
     const configs = JSON.parse((message as MessageEvent).data) as McpConfig[];
     handlers.onMcpConfigsReplaced(configs);
+  });
+
+  source.addEventListener("skills-replaced", (message) => {
+    const skills = JSON.parse((message as MessageEvent).data) as Skill[];
+    handlers.onSkillsReplaced(skills);
+  });
+
+  source.addEventListener("subagents-replaced", (message) => {
+    const subagents = JSON.parse((message as MessageEvent).data) as SubagentPreset[];
+    handlers.onSubagentsReplaced(subagents);
   });
 
   source.addEventListener("schedules-replaced", (message) => {
@@ -256,6 +268,30 @@ export function updateMcpConfig(id: string, body: Record<string, unknown>): Prom
 
 export function deleteMcpConfig(id: string): Promise<void> {
   return del(`/mcp-configs/${id}`);
+}
+
+export function addSkill(body: Record<string, unknown>): Promise<void> {
+  return post(`/skills`, body);
+}
+
+export function updateSkill(id: string, body: Record<string, unknown>): Promise<void> {
+  return put(`/skills/${id}`, body);
+}
+
+export function deleteSkill(id: string): Promise<void> {
+  return del(`/skills/${id}`);
+}
+
+export function addSubagent(body: Record<string, unknown>): Promise<void> {
+  return post(`/subagents`, body);
+}
+
+export function updateSubagent(id: string, body: Record<string, unknown>): Promise<void> {
+  return put(`/subagents/${id}`, body);
+}
+
+export function deleteSubagent(id: string): Promise<void> {
+  return del(`/subagents/${id}`);
 }
 
 export function undo(key: string): Promise<void> {

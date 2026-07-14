@@ -9,7 +9,22 @@ import {
   apiKeyTail,
   KIND_FILTER_KEY,
   kindFilter,
-  settingsModalOpen,
+  type SettingsSection,
+  settingsSection,
+  skillDeleteConfirm,
+  skillEditingId,
+  skillFormDescription,
+  skillFormInstructions,
+  skillFormName,
+  skills,
+  subagentDeleteConfirm,
+  subagentEditingId,
+  subagentFormDescription,
+  subagentFormEffort,
+  subagentFormModel,
+  subagentFormName,
+  subagentFormPrompt,
+  subagents,
   activeTab,
   catchUpMissedSchedules,
   chatDrafts,
@@ -108,7 +123,9 @@ import type {
   RecurrenceUnit,
   Schedule,
   Session,
+  Skill,
   Snapshot,
+  SubagentPreset,
   Team,
   TranscriptMessage,
 } from "./types.ts";
@@ -121,6 +138,8 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   grants.value = snapshot.grants;
   transcripts.value = snapshot.transcripts;
   mcpConfigs.value = snapshot.mcpConfigs;
+  skills.value = snapshot.skills;
+  subagents.value = snapshot.subagents;
   schedules.value = snapshot.schedules;
   catchUpMissedSchedules.value = snapshot.catchUpMissedSchedules;
   apiKeyConfigured.value = snapshot.apiKeyConfigured;
@@ -144,6 +163,14 @@ export function replaceMcpConfigs(configs: McpConfig[]): void {
   mcpConfigs.value = configs;
 }
 
+export function replaceSkills(next: Skill[]): void {
+  skills.value = next;
+}
+
+export function replaceSubagents(next: SubagentPreset[]): void {
+  subagents.value = next;
+}
+
 export function replaceSchedules(nextSchedules: Schedule[]): void {
   schedules.value = nextSchedules;
 }
@@ -157,17 +184,18 @@ export function replaceApiKeyStatus(configured: boolean, tail: string | null): v
   apiKeyTail.value = tail;
 }
 
-export function openSettingsModal(): void {
+export function openSettingsSection(section: SettingsSection): void {
   apiKeyDraft.value = "";
   apiKeyError.value = null;
-  // The MCP server library lives in this modal now — open with a clean
-  // add-server form, never someone's abandoned half-edit.
+  // Every section opens with clean forms, never an abandoned half-edit.
   resetMcpForm();
-  settingsModalOpen.value = true;
+  resetSkillForm();
+  resetSubagentForm();
+  settingsSection.value = section;
 }
 
 export function closeSettingsModal(): void {
-  settingsModalOpen.value = false;
+  settingsSection.value = null;
   // Never keep key material around after the modal closes.
   apiKeyDraft.value = "";
   apiKeyError.value = null;
@@ -1198,5 +1226,119 @@ export async function confirmDeleteSchedule(id: string): Promise<void> {
     await api.deleteSchedule(id);
   } catch (err) {
     showErrorToast("Couldn't delete schedule", err);
+  }
+}
+
+// ---- Skills library (Settings › Skills) ----
+
+function resetSkillForm(): void {
+  skillFormName.value = "";
+  skillFormDescription.value = "";
+  skillFormInstructions.value = "";
+  skillEditingId.value = null;
+}
+
+export function startEditSkill(skill: Skill): void {
+  skillEditingId.value = skill.id;
+  skillFormName.value = skill.name;
+  skillFormDescription.value = skill.description;
+  skillFormInstructions.value = skill.instructions;
+}
+
+export function cancelEditSkill(): void {
+  resetSkillForm();
+}
+
+export async function submitSkill(): Promise<void> {
+  if (!skillFormName.value.trim()) return;
+  const body = {
+    name: skillFormName.value,
+    description: skillFormDescription.value,
+    instructions: skillFormInstructions.value,
+  };
+  const editingId = skillEditingId.value;
+  try {
+    if (editingId) await api.updateSkill(editingId, body);
+    else await api.addSkill(body);
+    resetSkillForm();
+  } catch (err) {
+    showErrorToast(editingId ? "Couldn't update skill" : "Couldn't add skill", err);
+  }
+}
+
+export function askDeleteSkill(id: string): void {
+  skillDeleteConfirm.value = id;
+}
+
+export function cancelDeleteSkill(): void {
+  skillDeleteConfirm.value = null;
+}
+
+export async function confirmDeleteSkill(id: string): Promise<void> {
+  skillDeleteConfirm.value = null;
+  try {
+    await api.deleteSkill(id);
+  } catch (err) {
+    showErrorToast("Couldn't delete skill", err);
+  }
+}
+
+// ---- Subagent presets (Settings › Subagents) ----
+
+function resetSubagentForm(): void {
+  subagentFormName.value = "";
+  subagentFormDescription.value = "";
+  subagentFormPrompt.value = "";
+  subagentFormModel.value = "sonnet";
+  subagentFormEffort.value = "medium";
+  subagentEditingId.value = null;
+}
+
+export function startEditSubagent(subagent: SubagentPreset): void {
+  subagentEditingId.value = subagent.id;
+  subagentFormName.value = subagent.name;
+  subagentFormDescription.value = subagent.description;
+  subagentFormPrompt.value = subagent.systemPrompt;
+  subagentFormModel.value = subagent.model;
+  subagentFormEffort.value = subagent.effort;
+}
+
+export function cancelEditSubagent(): void {
+  resetSubagentForm();
+}
+
+export async function submitSubagent(): Promise<void> {
+  if (!subagentFormName.value.trim()) return;
+  const body = {
+    name: subagentFormName.value,
+    description: subagentFormDescription.value,
+    systemPrompt: subagentFormPrompt.value,
+    model: subagentFormModel.value,
+    effort: subagentFormEffort.value,
+  };
+  const editingId = subagentEditingId.value;
+  try {
+    if (editingId) await api.updateSubagent(editingId, body);
+    else await api.addSubagent(body);
+    resetSubagentForm();
+  } catch (err) {
+    showErrorToast(editingId ? "Couldn't update subagent" : "Couldn't add subagent", err);
+  }
+}
+
+export function askDeleteSubagent(id: string): void {
+  subagentDeleteConfirm.value = id;
+}
+
+export function cancelDeleteSubagent(): void {
+  subagentDeleteConfirm.value = null;
+}
+
+export async function confirmDeleteSubagent(id: string): Promise<void> {
+  subagentDeleteConfirm.value = null;
+  try {
+    await api.deleteSubagent(id);
+  } catch (err) {
+    showErrorToast("Couldn't delete subagent", err);
   }
 }

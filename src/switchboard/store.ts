@@ -10,6 +10,8 @@ import type {
   RecurrenceUnit,
   Schedule,
   Session,
+  Skill,
+  SubagentPreset,
   Team,
   TranscriptMessage,
 } from "./types.ts";
@@ -39,6 +41,8 @@ export const events = signal<FeedEvent[]>([]); // newest first
 export const grants = signal<Grant[]>([]);
 export const transcripts = signal<Record<string, TranscriptMessage[]>>({});
 export const mcpConfigs = signal<McpConfig[]>([]);
+export const skills = signal<Skill[]>([]);
+export const subagents = signal<SubagentPreset[]>([]);
 export const schedules = signal<Schedule[]>([]);
 export const catchUpMissedSchedules = signal(false);
 // Status only — the key itself never reaches the frontend.
@@ -186,9 +190,27 @@ export const mcpFormHeadersText = signal("");
 export const mcpEditingId = signal<string | null>(null);
 export const mcpDeleteConfirm = signal<string | null>(null);
 
-// Settings modal (gear in the TopBar) — currently just the Anthropic API
-// key. The draft is write-only: it's never prefilled from the server.
-export const settingsModalOpen = signal(false);
+// Skills library form (Settings › Skills)
+export const skillFormName = signal("");
+export const skillFormDescription = signal("");
+export const skillFormInstructions = signal("");
+export const skillEditingId = signal<string | null>(null);
+export const skillDeleteConfirm = signal<string | null>(null);
+
+// Subagent presets form (Settings › Subagents)
+export const subagentFormName = signal("");
+export const subagentFormDescription = signal("");
+export const subagentFormPrompt = signal("");
+export const subagentFormModel = signal<Model>("sonnet");
+export const subagentFormEffort = signal<Effort>("medium");
+export const subagentEditingId = signal<string | null>(null);
+export const subagentDeleteConfirm = signal<string | null>(null);
+
+// Settings modal — opened per-section from the nav rail's individual
+// buttons; null = closed. The API-key draft is write-only: never
+// prefilled from the server.
+export type SettingsSection = "api-keys" | "mcp" | "skills" | "subagents";
+export const settingsSection = signal<SettingsSection | null>(null);
 export const apiKeyDraft = signal("");
 export const apiKeySaving = signal(false);
 export const apiKeyError = signal<string | null>(null);

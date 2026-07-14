@@ -12,7 +12,7 @@
 // branch intact — the work products survive; the process does not.
 
 import { dirname, join } from "jsr:@std/path";
-import type { FeedEvent, Grant, McpConfig, Session, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
+import type { FeedEvent, Grant, McpConfig, Session, Skill, SubagentPreset, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
 import { appDataDir } from "./app-data-dir.ts";
 import { idCounter, setIdCounter, state } from "./state.ts";
 
@@ -32,6 +32,8 @@ interface PersistedState {
   grants: Grant[];
   transcripts: Record<string, TranscriptMessage[]>;
   mcpConfigs: McpConfig[];
+  skills: Skill[];
+  subagents: SubagentPreset[];
 }
 
 function snapshotForDisk(): PersistedState {
@@ -47,6 +49,8 @@ function snapshotForDisk(): PersistedState {
     grants: state.grants,
     transcripts,
     mcpConfigs: state.mcpConfigs,
+    skills: state.skills,
+    subagents: state.subagents,
   };
 }
 
@@ -136,6 +140,8 @@ export async function initPersistedState(): Promise<void> {
   state.events = arr<FeedEvent>(parsed.events);
   state.grants = arr<Grant>(parsed.grants);
   state.mcpConfigs = arr<McpConfig>(parsed.mcpConfigs);
+  state.skills = arr<Skill>(parsed.skills);
+  state.subagents = arr<SubagentPreset>(parsed.subagents);
   if (parsed.transcripts !== null && typeof parsed.transcripts === "object") {
     state.transcripts = {};
     for (const [sid, messages] of Object.entries(parsed.transcripts)) {
@@ -157,6 +163,8 @@ export async function initPersistedState(): Promise<void> {
   state.events.forEach((e) => scan(e.id));
   state.grants.forEach((g) => scan(g.id));
   state.mcpConfigs.forEach((m) => scan(m.id));
+  state.skills.forEach((x) => scan(x.id));
+  state.subagents.forEach((x) => scan(x.id));
   if (maxSeen > idCounter()) setIdCounter(maxSeen);
 
   // Leave a visible trace in each interrupted session's transcript so the

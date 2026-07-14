@@ -10,8 +10,8 @@ export function GrantsPopover() {
       className="sb-sbin"
       style={{
         position: "absolute",
-        top: 10,
-        right: 14,
+        left: 60,
+        bottom: 16,
         width: 370,
         background: "var(--sb-surface)",
         border: "1px solid var(--sb-border-3)",

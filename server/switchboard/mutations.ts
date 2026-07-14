@@ -1,4 +1,4 @@
-import type { EventResolution, FeedEvent, Grant, McpConfig, Schedule, Session, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
+import type { EventResolution, FeedEvent, Grant, McpConfig, Schedule, Session, Skill, SubagentPreset, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
 import { findEvent, findSession, nextId, state } from "./state.ts";
 import { publish } from "./bus.ts";
 import { persistStateSoon } from "./state-store.ts";
@@ -91,6 +91,18 @@ export function pushSessionRemove(id: string): void {
 export function pushMcpConfigsReplace(configs: McpConfig[]): void {
   state.mcpConfigs = configs;
   publish("mcp-configs-replaced", configs);
+  persistStateSoon();
+}
+
+export function pushSkillsReplace(skills: Skill[]): void {
+  state.skills = skills;
+  publish("skills-replaced", skills);
+  persistStateSoon();
+}
+
+export function pushSubagentsReplace(subagents: SubagentPreset[]): void {
+  state.subagents = subagents;
+  publish("subagents-replaced", subagents);
   persistStateSoon();
 }
 

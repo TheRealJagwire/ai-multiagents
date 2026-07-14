@@ -127,6 +127,26 @@ export interface McpConfig {
   headers: Record<string, string>; // http/sse only
 }
 
+// A reusable instruction snippet, managed in Settings › Skills. Not yet
+// consumed at spawn time — the library exists ahead of the wiring.
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+}
+
+// A named spawn preset, managed in Settings › Subagents: system prompt +
+// default model/effort. Not yet consumed at spawn time.
+export interface SubagentPreset {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model: Model;
+  effort: Effort;
+}
+
 export interface Grant {
   id: string;
   sid: string;
@@ -212,6 +232,8 @@ export interface Snapshot {
   grants: Grant[];
   transcripts: Record<string, TranscriptMessage[]>;
   mcpConfigs: McpConfig[];
+  skills: Skill[];
+  subagents: SubagentPreset[];
   schedules: Schedule[];
   // Opt-in: whether a schedule that came due while the app was closed
   // should fire immediately on the next launch. Defaults to false — a

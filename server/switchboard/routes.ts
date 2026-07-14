@@ -20,6 +20,7 @@ import { approveArtifact, requestChanges } from "./review-actions.ts";
 import { revokeGrant } from "./grant-actions.ts";
 import { spawnFromBody, spawnIntoTeam, startWorkers } from "./spawn-actions.ts";
 import { addMcpConfig, deleteMcpConfig, updateMcpConfig } from "./mcp-actions.ts";
+import { addSkill, addSubagent, deleteSkill, deleteSubagent, updateSkill, updateSubagent } from "./library-actions.ts";
 import { createSchedule, deleteSchedule, initSchedules, setCatchUpMissedSchedules, startScheduler } from "./schedule-actions.ts";
 import { clearAnthropicApiKey, initApiKey, setAnthropicApiKey } from "./api-key-actions.ts";
 import { listDirectories } from "./dir-listing.ts";
@@ -264,6 +265,60 @@ switchboardApp.put("/settings", async (c) => {
   if (typeof body.catchUpMissedSchedules === "boolean") {
     setCatchUpMissedSchedules(body.catchUpMissedSchedules);
   }
+  return c.body(null, 204);
+});
+
+switchboardApp.post("/skills", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  addSkill({
+    name: typeof body.name === "string" ? body.name : "",
+    description: typeof body.description === "string" ? body.description : "",
+    instructions: typeof body.instructions === "string" ? body.instructions : "",
+  });
+  return c.body(null, 204);
+});
+
+switchboardApp.put("/skills/:id", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const updated = updateSkill(c.req.param("id"), {
+    name: typeof body.name === "string" ? body.name : "",
+    description: typeof body.description === "string" ? body.description : "",
+    instructions: typeof body.instructions === "string" ? body.instructions : "",
+  });
+  return updated ? c.body(null, 204) : c.text("unknown skill", 404);
+});
+
+switchboardApp.delete("/skills/:id", (c) => {
+  deleteSkill(c.req.param("id"));
+  return c.body(null, 204);
+});
+
+switchboardApp.post("/subagents", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  addSubagent({
+    name: typeof body.name === "string" ? body.name : "",
+    description: typeof body.description === "string" ? body.description : "",
+    systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : "",
+    model: parseModel(body.model),
+    effort: parseEffort(body.effort),
+  });
+  return c.body(null, 204);
+});
+
+switchboardApp.put("/subagents/:id", async (c) => {
+  const body = await readJsonBody(c.req.raw);
+  const updated = updateSubagent(c.req.param("id"), {
+    name: typeof body.name === "string" ? body.name : "",
+    description: typeof body.description === "string" ? body.description : "",
+    systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : "",
+    model: parseModel(body.model),
+    effort: parseEffort(body.effort),
+  });
+  return updated ? c.body(null, 204) : c.text("unknown subagent", 404);
+});
+
+switchboardApp.delete("/subagents/:id", (c) => {
+  deleteSubagent(c.req.param("id"));
   return c.body(null, 204);
 });
 
