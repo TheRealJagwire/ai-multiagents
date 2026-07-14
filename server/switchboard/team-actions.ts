@@ -1,8 +1,13 @@
-import type { Effort, Model } from "../../src/switchboard/types.ts";
+import type { Effort, Model, Team } from "../../src/switchboard/types.ts";
 import { findSession, state } from "./state.ts";
 import { pushFeedEvent, pushSessionPatch, pushTeamsReplace } from "./mutations.ts";
 import { deleteSession } from "./session-actions.ts";
 import { getAgentSession } from "./agent-registry.ts";
+// Both subsystems run in one process (main.ts mounts both apps) — a direct
+// call avoids a self-HTTP round trip and mirrors kv.ts's existing import
+// the other way (orchestration -> switchboard's appDataDir).
+import { archiveBoard, resolveBoard } from "../orchestration/service.ts";
+import { getKv } from "../orchestration/kv.ts";
 
 const STEP_BOUNDARY_MS = 8000;
 
@@ -168,6 +173,30 @@ export function makeLead(sid: string): void {
   });
 }
 
+// The orchestration server has no hard-delete for boards, only archive
+// (read-only, hidden from board lists) — its whole design point is a
+// durable audit trail, so this doesn't fight that: archiving is the
+// correct "delete" here. Best-effort and async — a KV hiccup must never
+// block or fail the team deletion that triggered it. Guards against a
+// board shared by more than one team (nothing stops two teams pointing at
+// the same slug) by only archiving once no *other* team still links it.
+async function archiveBoardIfUnshared(boardSlug: string, remainingTeams: Team[], announceSid?: string): Promise<void> {
+  if (remainingTeams.some((t) => t.boardSlug === boardSlug)) return;
+  try {
+    const kv = await getKv();
+    const board = await resolveBoard(kv, boardSlug);
+    if (!board || board.archivedAt) return;
+    await archiveBoard(kv, board.id);
+    if (announceSid) {
+      pushFeedEvent({ sid: announceSid, kind: "info", own: false, verb: `board "${boardSlug}" archived — no other team links it` });
+    }
+  } catch (err) {
+    if (announceSid) {
+      pushFeedEvent({ sid: announceSid, kind: "error", own: false, verb: `failed to archive board "${boardSlug}": ${String(err)}` });
+    }
+  }
+}
+
 // Deletes every member session (same terminate-and-remove as deleteSession)
 // before removing the team record itself — no undo, matching every other
 // irreversible cleanup action in this app.
@@ -182,5 +211,10 @@ export function deleteTeam(teamId: string): void {
   }
 
   for (const member of members) deleteSession(member.id);
-  pushTeamsReplace(state.teams.filter((t) => t.id !== teamId));
+  const remainingTeams = state.teams.filter((t) => t.id !== teamId);
+  pushTeamsReplace(remainingTeams);
+
+  if (team.boardSlug) {
+    void archiveBoardIfUnshared(team.boardSlug, remainingTeams, announceSid);
+  }
 }
