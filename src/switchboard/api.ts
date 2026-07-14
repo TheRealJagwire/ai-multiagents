@@ -335,6 +335,21 @@ async function getOrchestrationJson<T>(path: string): Promise<T> {
   return await res.json() as T;
 }
 
+export async function createBoard(slug: string): Promise<void> {
+  const res = await fetch(`/api/orchestration/boards`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ slug, title: slug }),
+  });
+  // 400 "slug already in use" means someone beat us to it — that's success
+  // for the caller's purposes (the board exists now either way).
+  if (!res.ok && res.status !== 400) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(text || `Request failed (${res.status})`);
+  }
+  await res.body?.cancel();
+}
+
 export function fetchBoardCards(slug: string): Promise<BoardCard[]> {
   return getOrchestrationJson<BoardCard[]>(`/boards/${encodeURIComponent(slug)}/cards`);
 }

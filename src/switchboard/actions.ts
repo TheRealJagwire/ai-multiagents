@@ -1035,6 +1035,11 @@ export async function submitSpawn(): Promise<void> {
       }
     }
     if (mode !== "existing") rememberRecentDir(spawnDir.value);
+    // A freshly created team is where the action is about to happen —
+    // land the user on the Teams tab so they see it come up. (Scheduled
+    // spawns fire later with no one at the wheel, so they don't steal
+    // focus; joining an existing team doesn't either.)
+    if (mode === "new" && !spawnScheduleEnabled.value) activeTab.value = "teams";
     // Only a successful spawn resets the form and closes the modal — a
     // failed request keeps everything as typed so the user can fix and retry.
     resetSpawnFields(mode);
