@@ -1,6 +1,6 @@
 {
   "name": "kraken",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "exports": "./main.ts",
   "nodeModulesDir": "auto",
   "exclude": ["dist", "release", "node_modules"],
