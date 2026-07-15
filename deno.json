@@ -15,7 +15,7 @@
     "build:macos": "deno task build && deno desktop -A --target aarch64-apple-darwin --include ./dist -o ./release/macos/Kraken.app main.ts",
     "build:windows": "deno task build && deno desktop -A --target x86_64-pc-windows-msvc --include ./dist -o ./release/windows/Kraken.exe main.ts",
     "build:linux": "deno task build && deno desktop -A --target x86_64-unknown-linux-gnu --include ./dist -o ./release/linux/kraken main.ts",
-    "build:all": "deno task build && deno desktop -A --all-targets --include ./dist --compress zstd -o ./release main.ts"
+    "build:all": "deno task build:macos && deno task build:windows && deno task build:linux"
   },
   "desktop": {
     "app": {
