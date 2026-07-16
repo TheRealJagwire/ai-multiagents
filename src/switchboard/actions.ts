@@ -7,6 +7,10 @@ import {
   apiKeyError,
   apiKeySaving,
   apiKeyTail,
+  defaultDirDraft,
+  defaultDirectory,
+  defaultDirError,
+  defaultDirSaving,
   KIND_FILTER_KEY,
   kindFilter,
   type SettingsSection,
@@ -92,8 +96,10 @@ import {
   spawnMcpConfigIds,
   type SpawnMode,
   spawnNoWorktree,
+  spawnPlanFirst,
   type RecurrenceMode,
   spawnRecurrenceDays,
+  spawnUseDefaultDir,
   spawnRecurrenceEvery,
   spawnRecurrenceMode,
   spawnRecurrenceUnit,
@@ -144,6 +150,7 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   catchUpMissedSchedules.value = snapshot.catchUpMissedSchedules;
   apiKeyConfigured.value = snapshot.apiKeyConfigured;
   apiKeyTail.value = snapshot.apiKeyTail;
+  defaultDirectory.value = snapshot.defaultDirectory;
 }
 
 // The snapshot is otherwise only ever fetched once at mount — after a real
@@ -184,9 +191,17 @@ export function replaceApiKeyStatus(configured: boolean, tail: string | null): v
   apiKeyTail.value = tail;
 }
 
+export function replaceDefaultDirectory(value: string | null): void {
+  defaultDirectory.value = value;
+}
+
 export function openSettingsSection(section: SettingsSection): void {
   apiKeyDraft.value = "";
   apiKeyError.value = null;
+  // Not a secret — prefill with the current value so editing means
+  // "change this", not "retype it from scratch".
+  defaultDirDraft.value = defaultDirectory.value ?? "";
+  defaultDirError.value = null;
   // Every section opens with clean forms, never an abandoned half-edit.
   resetMcpForm();
   resetSkillForm();
@@ -199,6 +214,7 @@ export function closeSettingsModal(): void {
   // Never keep key material around after the modal closes.
   apiKeyDraft.value = "";
   apiKeyError.value = null;
+  defaultDirError.value = null;
 }
 
 export async function saveApiKey(): Promise<void> {
@@ -226,6 +242,29 @@ export async function clearApiKey(): Promise<void> {
   } finally {
     apiKeySaving.value = false;
   }
+}
+
+export async function saveDefaultDirectory(): Promise<void> {
+  const trimmed = defaultDirDraft.value.trim();
+  if (trimmed && !trimmed.startsWith("/")) {
+    defaultDirError.value = "Directory must be an absolute path (starting with /)";
+    return;
+  }
+  defaultDirSaving.value = true;
+  defaultDirError.value = null;
+  try {
+    await api.setDefaultDirectory(trimmed);
+    showToast(trimmed ? "Default directory saved" : "Default directory cleared");
+  } catch (err) {
+    defaultDirError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    defaultDirSaving.value = false;
+  }
+}
+
+export async function clearDefaultDirectory(): Promise<void> {
+  defaultDirDraft.value = "";
+  await saveDefaultDirectory();
 }
 
 export async function setCatchUpMissedSchedules(value: boolean): Promise<void> {
@@ -775,6 +814,7 @@ function resetSpawnFields(mode: SpawnMode, teamId?: string): void {
   memberEffort.value = "medium";
   draftMembers.value = mode === "new" ? freshDraft() : [];
   spawnDir.value = "";
+  spawnUseDefaultDir.value = false;
   spawnSessionName.value = "";
   spawnBoardSlug.value = "";
   spawnBaseRef.value = "HEAD";
@@ -783,6 +823,7 @@ function resetSpawnFields(mode: SpawnMode, teamId?: string): void {
   spawnMcpConfigIds.value = [];
   spawnLeadPlans.value = false;
   spawnAutonomousLead.value = false;
+  spawnPlanFirst.value = false;
   spawnScheduleEnabled.value = false;
   spawnScheduleAt.value = "";
   spawnRecurrenceMode.value = "none";
@@ -912,6 +953,14 @@ export function setSpawnAutonomousLead(value: boolean): void {
   spawnAutonomousLead.value = value;
 }
 
+export function setSpawnPlanFirst(value: boolean): void {
+  spawnPlanFirst.value = value;
+}
+
+export function setSpawnUseDefaultDir(value: boolean): void {
+  spawnUseDefaultDir.value = value;
+}
+
 export function setSpawnScheduleEnabled(value: boolean): void {
   spawnScheduleEnabled.value = value;
 }
@@ -965,6 +1014,8 @@ export async function submitSpawn(): Promise<void> {
     return;
   }
 
+  const dir = spawnUseDefaultDir.value ? (defaultDirectory.value ?? "") : spawnDir.value;
+
   spawnError.value = null;
   spawnSubmitting.value = true;
   try {
@@ -988,7 +1039,7 @@ export async function submitSpawn(): Promise<void> {
             mode: "new",
             teamName: teamName.value,
             goal: promptText.value,
-            dir: spawnDir.value,
+            dir,
             baseRef: spawnBaseRef.value,
             createNew: spawnCreateNew.value,
             useWorktree: !spawnNoWorktree.value,
@@ -996,6 +1047,7 @@ export async function submitSpawn(): Promise<void> {
             mcpConfigIds: spawnMcpConfigIds.value,
             members,
             boardSlug: spawnBoardSlug.value.trim() || undefined,
+            planFirst: spawnPlanFirst.value,
           };
         })()
         : {
@@ -1004,11 +1056,12 @@ export async function submitSpawn(): Promise<void> {
           task: promptText.value,
           model: memberModel.value,
           effort: memberEffort.value,
-          dir: spawnDir.value,
+          dir,
           baseRef: spawnBaseRef.value,
           createNew: spawnCreateNew.value,
           useWorktree: !spawnNoWorktree.value,
           mcpConfigIds: spawnMcpConfigIds.value,
+          planFirst: spawnPlanFirst.value,
         };
 
       if (spawnScheduleEnabled.value) {

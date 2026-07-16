@@ -34,6 +34,7 @@ function startWorktreeAndSession(
   // and worktree slugs carry the session's identity.
   short: string,
   onSpawnWorker?: (task: string, name?: string) => Promise<SpawnWorkerResult>,
+  planFirst?: boolean,
 ): void {
   (async () => {
     if (!useWorktree) {
@@ -47,6 +48,7 @@ function startWorktreeAndSession(
         effort,
         mcpConfigIds,
         onSpawnWorker,
+        planFirst,
       });
       return;
     }
@@ -61,7 +63,7 @@ function startWorktreeAndSession(
     await createWorktree(dir, baseRef, branch, worktreePath);
     pushSessionPatch(sid, { worktreePath, branch, statusLine: "Starting up…" });
 
-    await spawnAgentSession(sid, task, { dir, worktreePath, branch, model, effort, mcpConfigIds, onSpawnWorker });
+    await spawnAgentSession(sid, task, { dir, worktreePath, branch, model, effort, mcpConfigIds, onSpawnWorker, planFirst });
   })().catch((err) => {
     pushSessionPatch(sid, { status: "error", statusLine: "Failed to start", phase: "blocked" });
     pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to start real session: ${String(err)}` });
@@ -154,6 +156,7 @@ export function spawnSolo(
   mcpConfigIds: string[],
   useWorktree: boolean,
   name?: string,
+  planFirst?: boolean,
 ): void {
   const trimmedTask = task.trim() || "New task";
   const session = makeSession(nextId("s"), {
@@ -177,14 +180,28 @@ export function spawnSolo(
   if (createNew && useWorktree) {
     pushSessionPatch(session.id, { statusLine: "Creating repository…" });
     createNewRepo(dir)
-      .then(() => startWorktreeAndSession(session.id, dir, "HEAD", trimmedTask, model, effort, mcpConfigIds, true, session.short))
+      .then(() =>
+        startWorktreeAndSession(session.id, dir, "HEAD", trimmedTask, model, effort, mcpConfigIds, true, session.short, undefined, planFirst)
+      )
       .catch((err) => {
         pushSessionPatch(session.id, { status: "error", statusLine: "Failed to start", phase: "blocked" });
         pushFeedEvent({ sid: session.id, kind: "error", own: false, verb: `failed to create repository: ${String(err)}` });
       });
     return;
   }
-  startWorktreeAndSession(session.id, dir, baseRef, trimmedTask, model, effort, mcpConfigIds, useWorktree, session.short);
+  startWorktreeAndSession(
+    session.id,
+    dir,
+    baseRef,
+    trimmedTask,
+    model,
+    effort,
+    mcpConfigIds,
+    useWorktree,
+    session.short,
+    undefined,
+    planFirst,
+  );
 }
 
 export function spawnIntoTeam(
@@ -283,6 +300,7 @@ export function spawnTeam(
   members: { task: string; model: Model; effort: Effort; name?: string }[],
   useWorktree: boolean,
   boardSlug?: string,
+  planFirst?: boolean,
 ): void {
   const trimmedName = name.trim() || "New team";
   const trimmedGoal = goal.trim() || "No goal set yet.";
@@ -379,6 +397,7 @@ export function spawnTeam(
         useWorktree,
         session.short,
         i === 0 ? onSpawnWorker : undefined,
+        planFirst,
       );
     });
   };
@@ -432,7 +451,8 @@ export function spawnFromBody(body: Record<string, unknown>): void {
       })
       : [];
     const boardSlug = typeof body.boardSlug === "string" ? body.boardSlug : undefined;
-    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members, useWorktree, boardSlug);
+    const planFirst = body.planFirst === true;
+    spawnTeam(teamName, goal, dir, baseRef, createNew, coordination, mcpConfigIds, members, useWorktree, boardSlug, planFirst);
     return;
   }
 
@@ -445,7 +465,8 @@ export function spawnFromBody(body: Record<string, unknown>): void {
   const useWorktree = body.useWorktree !== false;
   const mcpConfigIds = parseStringArray(body.mcpConfigIds);
   const name = typeof body.name === "string" ? body.name : undefined;
-  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds, useWorktree, name);
+  const planFirst = body.planFirst === true;
+  spawnSolo(task, model, effort, dir, baseRef, createNew, mcpConfigIds, useWorktree, name, planFirst);
 }
 
 // Sequenced mode: reads the lead's SWITCHBOARD_TASKS.md and spawns one

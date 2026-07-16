@@ -26,6 +26,7 @@ import {
   removeTranscriptLocally,
   replaceApiKeyStatus,
   replaceCatchUpMissedSchedules,
+  replaceDefaultDirectory,
   replaceMcpConfigs,
   replaceSchedules,
   replaceSkills,
@@ -101,6 +102,7 @@ export function App() {
         onSchedulesReplaced: replaceSchedules,
         onCatchUpMissedSchedulesReplaced: replaceCatchUpMissedSchedules,
         onApiKeyStatusReplaced: replaceApiKeyStatus,
+        onDefaultDirectoryReplaced: replaceDefaultDirectory,
         onConnectionChange: handleConnectionChange,
         });
       }).catch(() => {

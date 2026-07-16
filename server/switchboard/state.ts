@@ -13,6 +13,7 @@ export const state: Snapshot = {
   catchUpMissedSchedules: false,
   apiKeyConfigured: false,
   apiKeyTail: null,
+  defaultDirectory: null,
 };
 
 let counter = 0;

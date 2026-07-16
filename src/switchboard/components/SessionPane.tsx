@@ -40,6 +40,7 @@ import { chipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, ph
 import { statusColor } from "../statusColors.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { PlanCard } from "./PlanCard.tsx";
 
 const TOOL_MESSAGE_PREVIEW_LINES = 4;
 
@@ -561,6 +562,9 @@ export function SessionPane() {
                 <Markdown text={message.text ?? ""} />
               </div>
             );
+          }
+          if (message.k === "plan") {
+            return <PlanCard key={i} text={message.text ?? ""} />;
           }
           if (message.k === "user") {
             return (

@@ -9,6 +9,7 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
 ];
 
 const SETTINGS: { section: SettingsSection; icon: string; label: string }[] = [
+  { section: "general", icon: "⌂", label: "General" },
   { section: "api-keys", icon: "⚷", label: "API keys" },
   { section: "mcp", icon: "⌁", label: "MCP servers" },
   { section: "skills", icon: "✦", label: "Skills" },

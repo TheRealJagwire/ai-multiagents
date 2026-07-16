@@ -1,13 +1,31 @@
 import { afterEach, beforeEach, describe, it } from "jsr:@std/testing/bdd";
 import { assert, assertEquals } from "jsr:@std/assert";
+import { join } from "jsr:@std/path";
 import type { SDKMessage } from "npm:@anthropic-ai/claude-agent-sdk@^0.3.204";
-import type { Session } from "../../src/switchboard/types.ts";
+import type { Session, Team } from "../../src/switchboard/types.ts";
 
 // agent-sessions transitively imports state-store (file paths bind at
 // import time) — isolate before loading.
 Deno.env.set("SWITCHBOARD_DATA_DIR", await Deno.makeTempDir({ prefix: "sb-agent-msg-test-" }));
 const { handleMessage } = await import("./agent-sessions.ts");
 const { state, setIdCounter } = await import("./state.ts");
+
+function makeTeam(overrides: Partial<Team> = {}): Team {
+  return {
+    id: "tm-1",
+    name: "Team",
+    goal: "",
+    dir: "/repo",
+    baseRef: "HEAD",
+    startedAt: 0,
+    mcpConfigIds: [],
+    coordination: "sequenced",
+    workersStarted: false,
+    useWorktree: true,
+    boardSlug: null,
+    ...overrides,
+  };
+}
 
 function makeSession(id: string, status: Session["status"]): Session {
   return {
@@ -45,6 +63,7 @@ function msg(fields: Record<string, unknown>): SDKMessage {
 
 beforeEach(() => {
   state.sessions = [];
+  state.teams = [];
   state.events = [];
   state.transcripts = {};
   setIdCounter(0);
@@ -104,5 +123,80 @@ describe("handleMessage status mapping", () => {
       }),
     );
     assertEquals(state.sessions[0].ctx, 50);
+  });
+});
+
+describe("handleMessage plan capture", () => {
+  it("ExitPlanMode turns the preceding assistant text into a plan card + artifact, not a generic tool log", () => {
+    state.sessions = [makeSession("s-1", "running")];
+    handleMessage(
+      "s-1",
+      msg({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "## Plan\nStep one.\nStep two." },
+            { type: "tool_use", name: "ExitPlanMode", input: {} },
+          ],
+        },
+      }),
+    );
+
+    const planMessage = state.transcripts["s-1"]?.find((m) => m.k === "plan");
+    assert(planMessage, "expected a plan transcript message");
+    assert(planMessage!.text!.includes("Step one."));
+    assert(!state.transcripts["s-1"]?.some((m) => m.k === "tool" && m.text?.includes("ExitPlanMode")));
+
+    const planEvent = state.events.find((e) => e.kind === "artifact" && e.artName === "Plan");
+    assert(planEvent, "expected a plan artifact event");
+    assertEquals(planEvent!.sid, "s-1");
+    assert(planEvent!.artPreview!.length > 0);
+  });
+
+  it("a non-plan tool_use is untouched — no plan card, still logged generically", () => {
+    state.sessions = [makeSession("s-1", "running")];
+    handleMessage(
+      "s-1",
+      msg({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", name: "Bash", input: { command: "ls" } }] },
+      }),
+    );
+
+    assert(!state.transcripts["s-1"]?.some((m) => m.k === "plan"));
+    assert(!state.events.some((e) => e.kind === "artifact"));
+    assert(state.transcripts["s-1"]?.some((m) => m.k === "tool" && m.text?.includes("Bash")));
+  });
+
+  it("a sequenced-team lead's SWITCHBOARD_TASKS.md becomes a plan after a successful turn", async () => {
+    const worktreePath = await Deno.makeTempDir({ prefix: "sb-plan-spec-test-" });
+    await Deno.writeTextFile(
+      join(worktreePath, "SWITCHBOARD_TASKS.md"),
+      "## Backend\nBuild the API.\n\n## Frontend\nBuild the UI.\n",
+    );
+    state.sessions = [{ ...makeSession("s-1", "running"), lead: true, teamId: "tm-1", worktreePath }];
+    state.teams = [makeTeam()];
+
+    handleMessage("s-1", msg({ type: "result", subtype: "success" }));
+    // checkForSpecPlan is fire-and-forget (reads the file async) — give its
+    // promise chain a tick to settle before asserting.
+    await new Promise((r) => setTimeout(r, 100));
+
+    const planEvent = state.events.find((e) => e.kind === "artifact" && e.artName === "Plan");
+    assert(planEvent, "expected a plan artifact event from the spec file");
+    assert(planEvent!.body!.includes("Backend"));
+    assert(planEvent!.body!.includes("Frontend"));
+  });
+
+  it("a classic (non-sequenced) team's lead never gets a spec-file plan", async () => {
+    const worktreePath = await Deno.makeTempDir({ prefix: "sb-plan-spec-test-" });
+    await Deno.writeTextFile(join(worktreePath, "SWITCHBOARD_TASKS.md"), "## Task\nDo it.\n");
+    state.sessions = [{ ...makeSession("s-1", "running"), lead: true, teamId: "tm-1", worktreePath }];
+    state.teams = [makeTeam({ coordination: "classic" })];
+
+    handleMessage("s-1", msg({ type: "result", subtype: "success" }));
+    await new Promise((r) => setTimeout(r, 100));
+
+    assert(!state.events.some((e) => e.kind === "artifact" && e.artName === "Plan"));
   });
 });

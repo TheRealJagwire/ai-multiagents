@@ -1,6 +1,14 @@
 import type { JSX } from "preact";
 import type { Effort, Model, Session } from "../types.ts";
-import { deleteSessionConfirm, expandedMemberId, moveConfirm, selectedSessionId, sessions, teams } from "../store.ts";
+import {
+  deleteSessionConfirm,
+  expandedMemberId,
+  latestPlanBySession,
+  moveConfirm,
+  selectedSessionId,
+  sessions,
+  teams,
+} from "../store.ts";
 import {
   askDeleteSession,
   cancelDeleteSession,
@@ -18,6 +26,7 @@ import {
 } from "../actions.ts";
 import { chipState, type ChipState, costPhrase, effortLabel, modelLabel } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
+import { PlanCard } from "./PlanCard.tsx";
 
 const MODELS: Model[] = ["haiku", "sonnet", "opus"];
 const EFFORTS: Effort[] = ["low", "medium", "high"];
@@ -99,6 +108,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
   }
 
   const otherTeams = teams.value.filter((t) => t.id !== session.teamId);
+  const plan = latestPlanBySession.value.get(session.id);
 
   return (
     <div>
@@ -169,6 +179,12 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
           ⋯
         </button>
       </div>
+
+      {plan && (
+        <div style={{ margin: branch ? "2px 0 8px 27px" : "2px 0 8px 10px" }}>
+          <PlanCard text={plan.body ?? ""} compact />
+        </div>
+      )}
 
       {expanded && (
         <div

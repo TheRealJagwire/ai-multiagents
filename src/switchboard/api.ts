@@ -22,6 +22,7 @@ export interface EventHandlers {
   onSchedulesReplaced: (schedules: Schedule[]) => void;
   onCatchUpMissedSchedulesReplaced: (value: boolean) => void;
   onApiKeyStatusReplaced: (configured: boolean, tail: string | null) => void;
+  onDefaultDirectoryReplaced: (value: string | null) => void;
   onConnectionChange: (connected: boolean) => void;
 }
 
@@ -123,6 +124,11 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
   source.addEventListener("api-key-status-replaced", (message) => {
     const { configured, tail } = JSON.parse((message as MessageEvent).data) as { configured: boolean; tail: string | null };
     handlers.onApiKeyStatusReplaced(configured, tail);
+  });
+
+  source.addEventListener("default-directory-replaced", (message) => {
+    const value = JSON.parse((message as MessageEvent).data) as string | null;
+    handlers.onDefaultDirectoryReplaced(value);
   });
 
   return () => source.close();
@@ -308,6 +314,10 @@ export function deleteSchedule(id: string): Promise<void> {
 
 export function setCatchUpMissedSchedules(value: boolean): Promise<void> {
   return put(`/settings`, { catchUpMissedSchedules: value });
+}
+
+export function setDefaultDirectory(value: string): Promise<void> {
+  return put(`/settings`, { defaultDirectory: value });
 }
 
 // --- Orchestration board reads (same server, different subsystem) ---

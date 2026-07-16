@@ -23,6 +23,7 @@ import { addMcpConfig, deleteMcpConfig, updateMcpConfig } from "./mcp-actions.ts
 import { addSkill, addSubagent, deleteSkill, deleteSubagent, updateSkill, updateSubagent } from "./library-actions.ts";
 import { createSchedule, deleteSchedule, initSchedules, setCatchUpMissedSchedules, startScheduler } from "./schedule-actions.ts";
 import { clearAnthropicApiKey, initApiKey, setAnthropicApiKey } from "./api-key-actions.ts";
+import { initDefaultDirectory, setDefaultDirectory } from "./general-settings-actions.ts";
 import { listDirectories } from "./dir-listing.ts";
 import { undoAction } from "./undo.ts";
 import { EFFORTS, MODELS, parseEffort, parseModel, parseStringArray, parseStringRecord, parseTransport } from "./parse-body.ts";
@@ -265,6 +266,9 @@ switchboardApp.put("/settings", async (c) => {
   if (typeof body.catchUpMissedSchedules === "boolean") {
     setCatchUpMissedSchedules(body.catchUpMissedSchedules);
   }
+  if (typeof body.defaultDirectory === "string") {
+    setDefaultDirectory(body.defaultDirectory);
+  }
   return c.body(null, 204);
 });
 
@@ -380,5 +384,6 @@ switchboardApp.delete("/settings/api-key", async (c) => {
 // first: schedule reconciliation may reference restored sessions by id.
 await initPersistedState();
 await initApiKey();
+await initDefaultDirectory();
 await initSchedules();
 startScheduler();

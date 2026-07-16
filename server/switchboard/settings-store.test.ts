@@ -66,4 +66,19 @@ describe("settings-store", () => {
     const info = await Deno.stat(SETTINGS_FILE);
     assertEquals(info.mode! & 0o777, 0o600);
   });
+
+  it("round-trips a default directory alongside other fields", async () => {
+    await updateSettings({ anthropicApiKey: "sk-ant-test-dir" });
+    await updateSettings({ defaultDirectory: "/repo/project" });
+    const settings = await loadSettingsFromDisk();
+    assertEquals(settings.defaultDirectory, "/repo/project");
+    assertEquals(settings.anthropicApiKey, "sk-ant-test-dir");
+  });
+
+  it("clearing the default directory removes the key entirely", async () => {
+    await updateSettings({ defaultDirectory: "/repo/project" });
+    await updateSettings({ defaultDirectory: undefined });
+    const settings = await loadSettingsFromDisk();
+    assertEquals(settings.defaultDirectory, undefined);
+  });
 });

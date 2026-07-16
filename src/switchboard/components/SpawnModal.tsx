@@ -1,5 +1,6 @@
 import type { Effort, Model, RecurrenceUnit } from "../types.ts";
 import {
+  defaultDirectory,
   dirSuggestions,
   draftMembers,
   mcpConfigs,
@@ -21,7 +22,9 @@ import {
   spawnMcpConfigIds,
   type SpawnMode,
   spawnNoWorktree,
+  spawnPlanFirst,
   spawnRecurrenceDays,
+  spawnUseDefaultDir,
   spawnRecurrenceEvery,
   spawnRecurrenceMode,
   spawnRecurrenceUnit,
@@ -51,7 +54,9 @@ import {
   setSpawnSessionName,
   setSpawnLeadPlans,
   setSpawnNoWorktree,
+  setSpawnPlanFirst,
   setSpawnRecurrenceEvery,
+  setSpawnUseDefaultDir,
   setSpawnRecurrenceMode,
   setSpawnRecurrenceUnit,
   setSpawnScheduleAt,
@@ -261,9 +266,10 @@ export function SpawnModal() {
                       : spawnCreateNew.value
                       ? "/absolute/path/to/new-repo"
                       : "/absolute/path/to/repo"}
-                    value={spawnDir.value}
+                    value={spawnUseDefaultDir.value ? (defaultDirectory.value ?? "") : spawnDir.value}
+                    disabled={spawnUseDefaultDir.value}
                     onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
-                    style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
+                    style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)", opacity: spawnUseDefaultDir.value ? 0.6 : 1 }}
                   />
                 </div>
                 {!spawnCreateNew.value && !spawnNoWorktree.value && (
@@ -278,7 +284,27 @@ export function SpawnModal() {
                   </div>
                 )}
               </div>
-              <DirectorySuggestions />
+              {!spawnUseDefaultDir.value && <DirectorySuggestions />}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontSize: 11.5,
+                  color: defaultDirectory.value ? "var(--sb-text-3)" : "var(--sb-text-5)",
+                  cursor: defaultDirectory.value ? "pointer" : "not-allowed",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={spawnUseDefaultDir.value}
+                  disabled={!defaultDirectory.value}
+                  onChange={(e) => setSpawnUseDefaultDir((e.target as HTMLInputElement).checked)}
+                />
+                {defaultDirectory.value
+                  ? `Use default directory (${defaultDirectory.value})`
+                  : "Use default directory — none set (Settings › General)"}
+              </label>
               <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -526,9 +552,10 @@ export function SpawnModal() {
                           : spawnCreateNew.value
                           ? "/absolute/path/to/new-repo"
                           : "/absolute/path/to/repo"}
-                        value={spawnDir.value}
+                        value={spawnUseDefaultDir.value ? (defaultDirectory.value ?? "") : spawnDir.value}
+                        disabled={spawnUseDefaultDir.value}
                         onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
-                        style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
+                        style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)", opacity: spawnUseDefaultDir.value ? 0.6 : 1 }}
                       />
                     </div>
                     {!spawnCreateNew.value && !spawnNoWorktree.value && (
@@ -543,7 +570,27 @@ export function SpawnModal() {
                       </div>
                     )}
                   </div>
-                  <DirectorySuggestions />
+                  {!spawnUseDefaultDir.value && <DirectorySuggestions />}
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      fontSize: 11.5,
+                      color: defaultDirectory.value ? "var(--sb-text-3)" : "var(--sb-text-5)",
+                      cursor: defaultDirectory.value ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={spawnUseDefaultDir.value}
+                      disabled={!defaultDirectory.value}
+                      onChange={(e) => setSpawnUseDefaultDir((e.target as HTMLInputElement).checked)}
+                    />
+                    {defaultDirectory.value
+                      ? `Use default directory (${defaultDirectory.value})`
+                      : "Use default directory — none set (Settings › General)"}
+                  </label>
                   <label
                     style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}
                   >
@@ -603,6 +650,17 @@ export function SpawnModal() {
               </div>
             </>
           )}
+
+        {modalMode.value !== "existing" && (
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={spawnPlanFirst.value}
+              onChange={(e) => setSpawnPlanFirst((e.target as HTMLInputElement).checked)}
+            />
+            Start in plan mode — review the plan before it touches anything
+          </label>
+        )}
 
         {modalMode.value !== "existing" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

@@ -123,3 +123,8 @@ export function pushApiKeyStatusReplace(configured: boolean, tail: string | null
   state.apiKeyTail = tail;
   publish("api-key-status-replaced", { configured, tail });
 }
+
+export function pushDefaultDirectoryReplace(value: string | null): void {
+  state.defaultDirectory = value;
+  publish("default-directory-replaced", value);
+}

@@ -48,6 +48,8 @@ export const catchUpMissedSchedules = signal(false);
 // Status only — the key itself never reaches the frontend.
 export const apiKeyConfigured = signal(false);
 export const apiKeyTail = signal<string | null>(null);
+// The spawn flow's opt-in default — not a secret, sent as-is.
+export const defaultDirectory = signal<string | null>(null);
 
 // UI state
 export const activeTab = signal<Tab>("feed");
@@ -128,6 +130,8 @@ export const spawnBoardSlug = signal("");
 export const spawnBaseRef = signal("HEAD");
 export const spawnCreateNew = signal(false);
 export const spawnNoWorktree = signal(false);
+// Opt into Settings › General's default directory instead of typing one.
+export const spawnUseDefaultDir = signal(false);
 export const spawnMcpConfigIds = signal<string[]>([]);
 // datetime-local input value ("" until the user picks a time) — parsed to
 // an epoch ms with `new Date(value).getTime()` at submit time, which
@@ -164,6 +168,10 @@ function loadRecentDirs(): string[] {
 export const recentDirs = signal<string[]>(loadRecentDirs());
 export const spawnLeadPlans = signal(false);
 export const spawnAutonomousLead = signal(false);
+// Starts the spawned session(s) in Claude's plan-mode: read-only until the
+// agent proposes a plan and you approve it to start executing (see
+// recordPlan / ExitPlanMode handling in agent-sessions.ts).
+export const spawnPlanFirst = signal(false);
 export const spawnError = signal<string | null>(null);
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -209,11 +217,14 @@ export const subagentDeleteConfirm = signal<string | null>(null);
 // Settings modal — opened per-section from the nav rail's individual
 // buttons; null = closed. The API-key draft is write-only: never
 // prefilled from the server.
-export type SettingsSection = "api-keys" | "mcp" | "skills" | "subagents";
+export type SettingsSection = "general" | "api-keys" | "mcp" | "skills" | "subagents";
 export const settingsSection = signal<SettingsSection | null>(null);
 export const apiKeyDraft = signal("");
 export const apiKeySaving = signal(false);
 export const apiKeyError = signal<string | null>(null);
+export const defaultDirDraft = signal("");
+export const defaultDirSaving = signal(false);
+export const defaultDirError = signal<string | null>(null);
 
 // Scheduled items modal — lists what's pending plus a small form to
 // schedule a message to an already-running session (scheduling a new
@@ -229,6 +240,17 @@ export const scheduleError = signal<string | null>(null);
 // Derived
 export const sessionsById = computed(() => new Map(sessions.value.map((s) => [s.id, s])));
 export const eventsById = computed(() => new Map(events.value.map((e) => [e.id, e])));
+
+// Latest plan artifact per session — events are newest-first, so the first
+// match seen per sid is its most recent plan. Backs the plan preview shown
+// on a session's roster row (TeamMemberRow), outside the open SessionPane.
+export const latestPlanBySession = computed(() => {
+  const map = new Map<string, FeedEvent>();
+  for (const e of events.value) {
+    if (e.kind === "artifact" && e.artName === "Plan" && !map.has(e.sid)) map.set(e.sid, e);
+  }
+  return map;
+});
 
 export const selectedSession = computed<Session | null>(() =>
   selectedSessionId.value ? sessionsById.value.get(selectedSessionId.value) ?? null : null
@@ -325,14 +347,23 @@ const scheduleTimeError = computed<string | null>(() => {
 // Client-side mirror of what the server would reject anyway — catching it
 // here means the failure shows up as disabled-submit-button-with-a-reason
 // instead of a spawned session that immediately errors out.
-export const spawnValidationError = computed<string | null>(() => {
+function directoryError(): string | null {
   const isAbsolute = (path: string) => path.trim().startsWith("/");
+  if (spawnUseDefaultDir.value) {
+    if (!defaultDirectory.value) return "No default directory set — pick one in Settings › General, or enter one here";
+    return null;
+  }
+  if (!spawnDir.value.trim()) return "Directory is required";
+  if (!isAbsolute(spawnDir.value)) return "Directory must be an absolute path (starting with /)";
+  return null;
+}
 
+export const spawnValidationError = computed<string | null>(() => {
   if (modalMode.value === "new") {
     if (!teamName.value.trim()) return "Team name is required";
     if (!promptText.value.trim()) return "Team goal is required";
-    if (!spawnDir.value.trim()) return "Directory is required";
-    if (!isAbsolute(spawnDir.value)) return "Directory must be an absolute path (starting with /)";
+    const dirError = directoryError();
+    if (dirError) return dirError;
     const relevantMembers = spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value;
     if (relevantMembers.some((m) => !m.task.trim())) return "Every member needs a task";
     return scheduleTimeError.value;
@@ -345,8 +376,8 @@ export const spawnValidationError = computed<string | null>(() => {
   }
 
   if (!promptText.value.trim()) return "Task is required";
-  if (!spawnDir.value.trim()) return "Directory is required";
-  if (!isAbsolute(spawnDir.value)) return "Directory must be an absolute path (starting with /)";
+  const dirError = directoryError();
+  if (dirError) return dirError;
   return scheduleTimeError.value;
 });
 

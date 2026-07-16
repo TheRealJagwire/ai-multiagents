@@ -1,11 +1,13 @@
 import { type SettingsSection, settingsSection } from "../store.ts";
 import { closeSettingsModal } from "../actions.ts";
 import { ApiKeySection } from "./ApiKeySection.tsx";
+import { GeneralSection } from "./GeneralSection.tsx";
 import { McpConfigsSection } from "./McpConfigsSection.tsx";
 import { SkillsSection } from "./SkillsSection.tsx";
 import { SubagentsSection } from "./SubagentsSection.tsx";
 
 const TITLES: Record<SettingsSection, string> = {
+  general: "General",
   "api-keys": "API keys",
   mcp: "MCP servers",
   skills: "Skills",
@@ -59,6 +61,7 @@ export function SettingsModal() {
           </button>
         </div>
 
+        {section === "general" && <GeneralSection />}
         {section === "api-keys" && <ApiKeySection />}
         {section === "mcp" && <McpConfigsSection />}
         {section === "skills" && <SkillsSection />}

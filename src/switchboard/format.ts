@@ -115,6 +115,19 @@ export function formatRecurrence(recurrence: Recurrence | null): string | null {
   return `weekly on ${days} at ${time}`;
 }
 
+// Turns arbitrary plan text (markdown prose, a numbered list, section
+// headings, whatever the model or a SWITCHBOARD_TASKS.md task wrote) into a
+// flat bulleted list: one non-blank line in, one bullet out, with any
+// existing -/*/number/# marker stripped so it doesn't double up with the
+// <li> bullet the caller renders.
+export function planBullets(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.replace(/^[-*•]\s+/, "").replace(/^\d+[.)]\s+/, "").replace(/^#{1,6}\s+/, ""));
+}
+
 export type ChipState = "current" | "pending" | "idle";
 
 export function chipState(current: boolean, pending: boolean): ChipState {

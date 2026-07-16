@@ -16,6 +16,10 @@ export interface PersistedSettings {
   // file permissions; never sent to the frontend (only a configured
   // flag + tail for display — see api-key-actions.ts).
   anthropicApiKey?: string;
+  // An absolute path the spawn flow can opt into instead of typing one out
+  // each time (see general-settings-actions.ts). Not a secret — unlike the
+  // API key, this is sent to the frontend as-is.
+  defaultDirectory?: string;
 }
 
 const DEFAULT_SETTINGS: PersistedSettings = { catchUpMissedSchedules: false };
@@ -34,6 +38,9 @@ export async function loadSettingsFromDisk(): Promise<PersistedSettings> {
         : DEFAULT_SETTINGS.catchUpMissedSchedules,
       ...(typeof v.anthropicApiKey === "string" && v.anthropicApiKey.length > 0
         ? { anthropicApiKey: v.anthropicApiKey }
+        : {}),
+      ...(typeof v.defaultDirectory === "string" && v.defaultDirectory.length > 0
+        ? { defaultDirectory: v.defaultDirectory }
         : {}),
     };
   } catch (err) {

@@ -217,7 +217,7 @@ export interface Schedule {
   occurrenceCount: number;
 }
 
-export type TranscriptMessageKind = "note" | "text" | "tool" | "user" | "perm" | "summary";
+export type TranscriptMessageKind = "note" | "text" | "tool" | "user" | "perm" | "summary" | "plan";
 
 export interface TranscriptMessage {
   k: TranscriptMessageKind;
@@ -246,4 +246,8 @@ export interface Snapshot {
   // this" display.
   apiKeyConfigured: boolean;
   apiKeyTail: string | null;
+  // Persisted in Settings › General — the spawn flow can opt into this
+  // instead of typing a directory out each time. Not a secret, so (unlike
+  // the API key) the actual value is sent to the frontend.
+  defaultDirectory: string | null;
 }

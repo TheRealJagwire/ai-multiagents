@@ -3,11 +3,13 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import type { FeedEvent, Session } from "./types.ts";
 import {
   activeFilter,
+  defaultDirectory,
   draftMembers,
   events,
   filteredStream,
   kindFilter,
   lastSeen,
+  latestPlanBySession,
   modalMode,
   promptText,
   railGroups,
@@ -17,6 +19,7 @@ import {
   spawnDir,
   spawnLeadPlans,
   spawnScheduleEnabled,
+  spawnUseDefaultDir,
   spawnValidationError,
   targetTeamId,
   teamName,
@@ -161,6 +164,29 @@ describe("railGroups", () => {
   });
 });
 
+describe("latestPlanBySession", () => {
+  it("keeps only the newest plan artifact per session", () => {
+    events.value = [
+      makeEvent({ id: "e-3", sid: "s-1", kind: "artifact", artName: "Plan", body: "newest" }),
+      makeEvent({ id: "e-2", sid: "s-2", kind: "artifact", artName: "Plan", body: "other session" }),
+      makeEvent({ id: "e-1", sid: "s-1", kind: "artifact", artName: "Plan", body: "oldest" }),
+    ];
+
+    const map = latestPlanBySession.value;
+    assertEquals(map.get("s-1")?.body, "newest");
+    assertEquals(map.get("s-2")?.body, "other session");
+  });
+
+  it("ignores non-plan artifacts and other event kinds", () => {
+    events.value = [
+      makeEvent({ id: "e-2", sid: "s-1", kind: "artifact", artName: "Report" }),
+      makeEvent({ id: "e-1", sid: "s-1", kind: "message" }),
+    ];
+
+    assertEquals(latestPlanBySession.value.size, 0);
+  });
+});
+
 describe("spawnValidationError", () => {
   beforeEach(() => {
     modalMode.value = "solo";
@@ -171,6 +197,8 @@ describe("spawnValidationError", () => {
     spawnLeadPlans.value = false;
     spawnScheduleEnabled.value = false;
     draftMembers.value = [];
+    spawnUseDefaultDir.value = false;
+    defaultDirectory.value = null;
   });
 
   it("solo: requires task, then an absolute directory", () => {
@@ -205,6 +233,27 @@ describe("spawnValidationError", () => {
     promptText.value = "join in";
     assertEquals(spawnValidationError.value, "Pick a team");
     targetTeamId.value = "tm-1";
+    assertEquals(spawnValidationError.value, null);
+  });
+
+  it("opting into the default directory skips the manual directory check", () => {
+    promptText.value = "do the thing";
+    spawnUseDefaultDir.value = true;
+    assert(spawnValidationError.value!.includes("No default directory set"));
+
+    defaultDirectory.value = "/repo/project";
+    assertEquals(spawnValidationError.value, null, "spawnDir stays empty but that's fine — the default fills in");
+  });
+
+  it("new team also honors the default-directory opt-in", () => {
+    modalMode.value = "new";
+    teamName.value = "Alpha";
+    promptText.value = "goal";
+    draftMembers.value = [{ task: "lead work", model: "sonnet", effort: "medium", name: "" }];
+    spawnUseDefaultDir.value = true;
+    assert(spawnValidationError.value!.includes("No default directory set"));
+
+    defaultDirectory.value = "/repo/project";
     assertEquals(spawnValidationError.value, null);
   });
 });

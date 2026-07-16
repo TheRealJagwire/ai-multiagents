@@ -8,9 +8,12 @@ import type {
 } from "npm:@anthropic-ai/claude-agent-sdk@^0.3.204";
 import { z } from "npm:zod@^4.4.3";
 import type { Effort, Model } from "../../src/switchboard/types.ts";
+import { planBullets } from "../../src/switchboard/format.ts";
 import { pushFeedEvent, pushSessionPatch, pushTranscriptMessage } from "./mutations.ts";
 import { getAgentSession, registerAgentSession, registerPendingApproval } from "./agent-registry.ts";
 import { state } from "./state.ts";
+import { parseSpecFile } from "./team-spec.ts";
+import { readSpecFile } from "./git-worktree.ts";
 
 // Looks up each id against the live config library rather than snapshotting
 // configs at spawn time — a config deleted between spawn and lookup is just
@@ -158,6 +161,11 @@ export interface SpawnOptions {
   // Only set when spawning the lead of an "autonomous" team — regular
   // workers never receive it, so only a lead can grow its own team.
   onSpawnWorker?: (task: string, name?: string) => Promise<SpawnWorkerResult>;
+  // Starts the session in the SDK's "plan" permission mode: read-only until
+  // the agent calls ExitPlanMode and the user approves (via the same
+  // canUseTool flow every other tool goes through). Defaults to "default"
+  // (execute freely) when unset.
+  planFirst?: boolean;
 }
 
 export async function spawnAgentSession(sid: string, task: string, opts: SpawnOptions): Promise<void> {
@@ -169,16 +177,28 @@ export async function spawnAgentSession(sid: string, task: string, opts: SpawnOp
       return { behavior: "allow", updatedInput: input };
     }
 
-    const command = typeof input.command === "string" ? input.command : JSON.stringify(input);
+    // ExitPlanMode's input is just optional allowedPrompts metadata, not the
+    // plan itself (that's captured separately from the preceding assistant
+    // text — see recordPlan) — showing its raw JSON here would just be "{}"
+    // or a stray allowedPrompts blob, so give it a plain-language approval
+    // prompt instead of the generic command dump every other tool gets.
+    const command = toolName === "ExitPlanMode"
+      ? "Exit plan mode and begin executing"
+      : typeof input.command === "string"
+      ? input.command
+      : JSON.stringify(input);
     const extra = callOpts as unknown as { title?: string; description?: string; signal: AbortSignal };
     const feedEvent = pushFeedEvent({
       sid,
       kind: "approval",
       own: false,
-      verb: `wants to use ${toolName}`,
+      verb: toolName === "ExitPlanMode" ? "wants to exit plan mode and start executing" : `wants to use ${toolName}`,
       command,
       grantPattern: `${toolName} *`,
-      why: extra.title ?? extra.description ?? `Requested by the agent (${toolName})`,
+      why: extra.title ?? extra.description ??
+        (toolName === "ExitPlanMode"
+          ? "Review the plan above, then approve to let it start making changes."
+          : `Requested by the agent (${toolName})`),
     });
     pushTranscriptMessage(sid, { k: "perm", eventId: feedEvent.id });
     pushSessionPatch(sid, { status: "waiting", statusLine: "Waiting for your input", phase: "gated" });
@@ -201,7 +221,7 @@ export async function spawnAgentSession(sid: string, task: string, opts: SpawnOp
     cwd: opts.worktreePath,
     model: opts.model,
     effort: opts.effort,
-    permissionMode: "default",
+    permissionMode: opts.planFirst ? "plan" : "default",
     canUseTool,
     systemPrompt: WORKER_SYSTEM_PROMPT,
     ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
@@ -265,6 +285,52 @@ function flushTurnSummary(sid: string): void {
   pushFeedEvent({ sid, kind: "message", own: false, verb: "responded", body });
 }
 
+const PLAN_PREVIEW_LINES = 6;
+
+// A "plan" — whether Claude's own ExitPlanMode text or a sequenced-team
+// lead's SWITCHBOARD_TASKS.md — always lands here: one bulleted card in the
+// session's transcript, plus a feed "artifact" event so it also shows on
+// that session's roster row (see latestPlanBySession in the frontend store)
+// and the main dashboard feed.
+function recordPlan(sid: string, text: string): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  pushTranscriptMessage(sid, { k: "plan", text: trimmed });
+  const bullets = planBullets(trimmed);
+  pushFeedEvent({
+    sid,
+    kind: "artifact",
+    own: false,
+    verb: "proposed a plan",
+    body: trimmed,
+    artName: "Plan",
+    artExt: "md",
+    artPreview: bullets.slice(0, PLAN_PREVIEW_LINES).map((line) => [line, "n"] as [string, "n"]),
+  });
+}
+
+// Sequenced-team leads write their plan to SWITCHBOARD_TASKS.md rather than
+// calling ExitPlanMode — dedup by last-seen file content per session so a
+// re-check after every successful turn doesn't re-post the same plan.
+const seenSpecContent = new Map<string, string>();
+
+async function checkForSpecPlan(sid: string): Promise<void> {
+  const session = state.sessions.find((s) => s.id === sid);
+  if (!session?.lead || !session.teamId || !session.worktreePath) return;
+  const team = state.teams.find((t) => t.id === session.teamId);
+  if (team?.coordination !== "sequenced") return;
+
+  const content = await readSpecFile(session.worktreePath);
+  if (!content || seenSpecContent.get(sid) === content) return;
+  seenSpecContent.set(sid, content);
+
+  const tasks = parseSpecFile(content);
+  if (tasks.length === 0) return;
+  const text = tasks.map((t) => `${t.label ? `${t.label}: ` : ""}${t.task.replace(/\s+/g, " ")}`).join("\n");
+  recordPlan(sid, text);
+}
+
 function textFromContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -310,10 +376,19 @@ export function handleMessage(sid: string, message: SDKMessage): void {
       const content = (anyMessage.message as { content?: unknown } | undefined)?.content;
       if (Array.isArray(content)) {
         beginAssistantMessage(sid);
+        // Claude writes the plan as ordinary text, then calls ExitPlanMode
+        // with no meaningful input of its own (just optional allowedPrompts
+        // metadata) to request approval to start executing it — so "the
+        // plan" is whatever text preceded that tool_use in this same
+        // message, not the tool_use's input.
+        let planText = "";
         for (const block of content as { type: string; text?: string; name?: string; input?: unknown }[]) {
           if (block.type === "text" && block.text) {
             pushTranscriptMessage(sid, { k: "text", text: block.text });
             collectTurnText(sid, block.text);
+            planText += (planText ? "\n\n" : "") + block.text;
+          } else if (block.type === "tool_use" && block.name === "ExitPlanMode") {
+            recordPlan(sid, planText);
           } else if (block.type === "tool_use") {
             const label = block.input && typeof block.input === "object"
               ? JSON.stringify(block.input)
@@ -361,6 +436,10 @@ export function handleMessage(sid: string, message: SDKMessage): void {
       // pending-approval "waiting" stays waiting.
       if (anyMessage.subtype === "success") {
         flushTurnSummary(sid);
+        // Fire-and-forget: a sequenced-team lead's plan lives in a file, not
+        // a message, so there's nothing to await here — just check after
+        // every successful turn and post it if it's new.
+        checkForSpecPlan(sid).catch(() => {});
       } else if (anyMessage.subtype) {
         turnText.delete(sid);
         const errors = Array.isArray(anyMessage.errors) ? (anyMessage.errors as string[]) : [];
