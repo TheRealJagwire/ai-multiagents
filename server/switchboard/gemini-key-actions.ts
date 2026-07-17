@@ -38,9 +38,12 @@ export async function getGeminiApiKey(): Promise<string | undefined> {
 export async function setGeminiApiKey(key: string): Promise<{ error: string } | null> {
   const trimmed = key.trim();
   if (!trimmed) return { error: "API key is required" };
-  // Shape check only — AIza is the documented Google API key prefix. Same
-  // warning-grade gate as the Anthropic key: no live probe on save.
-  if (!trimmed.startsWith("AIza")) return { error: 'That does not look like a Gemini API key (expected an "AIza…" value)' };
+  // Google issues Gemini keys in more than one shape — classic AI-Studio
+  // "AIza…" keys and newer "AQ.…" keys both authenticate (the latter
+  // verified live 2026-07-17). So the only sanity check worth making is
+  // catching an obvious wrong-box paste of an Anthropic key; anything else
+  // is left for the first real spawn to surface as a session error.
+  if (trimmed.startsWith("sk-ant-")) return { error: "That looks like an Anthropic key — paste it in the Anthropic field instead." };
   await updateSettings({ geminiApiKey: trimmed });
   Deno.env.set(ENV_VAR, trimmed);
   pushGeminiKeyStatusReplace(true, tailOf(trimmed));

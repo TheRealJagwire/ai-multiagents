@@ -81,7 +81,7 @@ if (!apiKey) {
   let sawFunctionCall = false;
   let sawUsage: unknown = null;
   for await (
-    const event of makeRunner("gemini-2.5-flash").runAsync({
+    const event of makeRunner("gemini-flash-latest").runAsync({
       userId: "u1",
       sessionId: session.id,
       newMessage: { role: "user", parts: [{ text: "Echo the word 'kraken' using your tool." }] },
@@ -102,7 +102,7 @@ if (!apiKey) {
   // SAME service+sessionId — the model must still see the earlier exchange.
   let recallText = "";
   for await (
-    const event of makeRunner("gemini-2.5-flash").runAsync({
+    const event of makeRunner("gemini-flash-latest").runAsync({
       userId: "u1",
       sessionId: session.id,
       newMessage: { role: "user", parts: [{ text: "What word did I ask you to echo earlier? Reply with just the word." }] },
@@ -125,7 +125,7 @@ if (!apiKey) {
       appName: "spike",
       agent: new LlmAgent({
         name: "spike_thinking",
-        model: new Gemini({ model: "gemini-2.5-flash", apiKey }),
+        model: new Gemini({ model: "gemini-flash-latest", apiKey }),
         instruction: "Answer in one word.",
         tools: [],
         generateContentConfig: { thinkingConfig: { thinkingBudget: 0 } },

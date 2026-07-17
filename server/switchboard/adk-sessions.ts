@@ -22,12 +22,15 @@ import { buildMcpToolsets } from "./adk-mcp.ts";
 import { WORKER_SYSTEM_PROMPT, type SpawnOptions } from "./agent-sessions.ts";
 import { getGeminiApiKey } from "./gemini-key-actions.ts";
 
-// UI model names → real Gemini model IDs (verified against @google/adk
-// 1.3.0, whose Gemini class defaults to gemini-2.5-flash).
+// UI model names → real Gemini model IDs. Use the "-latest" aliases rather
+// than pinned versions: verified live (2026-07-17) that pinned ids like
+// gemini-2.5-flash now 404 with "no longer available to new users", while the
+// aliases keep working and always point at the current recommended model.
 const GEMINI_MODEL_IDS: Partial<Record<Model, string>> = {
-  "gemini-flash": "gemini-2.5-flash",
-  "gemini-pro": "gemini-2.5-pro",
+  "gemini-flash": "gemini-flash-latest",
+  "gemini-pro": "gemini-pro-latest",
 };
+const GEMINI_MODEL_FALLBACK = "gemini-flash-latest";
 
 // Approximate USD per input/output token (2.5 Flash and Pro list prices) —
 // the cost gauge is best-effort, matching the "roughly what has this cost
@@ -43,11 +46,12 @@ const GEMINI_CONTEXT_WINDOW = 1_000_000;
 // lets the model decide, high gives it a large budget. Set once at spawn
 // (effort is fixed for a session's life, same as the Claude driver).
 //
-// NOTE: whether ADK-TS forwards generateContentConfig.thinkingConfig to the
-// model or strips it is unverified without a live key — the spike's (g) check
-// answers this. If it's stripped, this is a harmless no-op (Gemini falls back
-// to its default auto-thinking, i.e. today's behavior); if it's honored, the
-// effort chip finally means something for Gemini. Either way, no regression.
+// The Gemini REST API honors thinkingConfig.thinkingBudget (verified live
+// 2026-07-17: budget 0 dropped thoughtsTokenCount from 76 to none). Whether
+// ADK-TS forwards it end-to-end couldn't be confirmed — the test key's free
+// quota ran out — but ADK builds on @google/genai and passes
+// generateContentConfig straight through, so it almost certainly does. If it
+// somehow doesn't, this is a harmless no-op (default auto-thinking).
 const THINKING_BUDGET: Record<Effort, number> = { low: 0, medium: -1, high: 24_576 };
 
 const ADK_INSTRUCTION_SUFFIX = "\n\n" +
@@ -72,7 +76,10 @@ export function translateAdkEvent(sid: string, event: unknown, model: Model, tra
   const anyEvent = event as {
     content?: { role?: string; parts?: { text?: string; functionCall?: { name?: string; args?: unknown }; functionResponse?: { name?: string; response?: unknown } }[] };
     partial?: boolean;
-    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    // Field names verified against real Gemini responses (2026-07-17):
+    // thinking tokens come back separately in thoughtsTokenCount and are
+    // billed as output, so they're folded into the output-cost side below.
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
   };
 
   const parts = anyEvent.content?.parts ?? [];
@@ -101,7 +108,7 @@ export function translateAdkEvent(sid: string, event: unknown, model: Model, tra
   const usage = anyEvent.usageMetadata;
   if (usage) {
     const input = usage.promptTokenCount ?? 0;
-    const output = usage.candidatesTokenCount ?? 0;
+    const output = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
     const prices = GEMINI_PRICES[model];
     if (prices) tracker.cost += input * prices.input + output * prices.output;
     if (input > 0) {
@@ -194,7 +201,7 @@ export async function spawnAdkSession(sid: string, task: string, opts: SpawnOpti
         appName: "switchboard",
         agent: new LlmAgent({
           name: "switchboard_worker",
-          model: new Gemini({ model: GEMINI_MODEL_IDS[model] ?? "gemini-2.5-flash", apiKey }),
+          model: new Gemini({ model: GEMINI_MODEL_IDS[model] ?? GEMINI_MODEL_FALLBACK, apiKey }),
           instruction,
           tools,
           generateContentConfig: { thinkingConfig: { thinkingBudget: THINKING_BUDGET[opts.effort] } },
