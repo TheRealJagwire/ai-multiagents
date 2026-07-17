@@ -6,9 +6,19 @@
   "exclude": ["dist", "release", "node_modules"],
   "unstable": ["kv"],
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "lib": ["dom", "dom.iterable", "dom.asynciterable", "deno.ns", "deno.unstable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  },
+  "lint": {
+    "exclude": ["design_handoff_switchboard"],
+    "rules": {
+      "exclude": ["no-import-prefix", "no-unversioned-import"]
+    }
   },
   "tasks": {
+    "check": "deno check main.ts 'src/**/*.ts' 'src/**/*.tsx' 'server/**/*.ts' 'tools/**/*.ts'",
     "test": "deno test -A server/ src/ tools/",
     "build": "deno run -A npm:vite build",
     "dev": "deno task build && deno desktop -A --hmr --include ./dist main.ts",

@@ -264,7 +264,7 @@ export function spawnIntoTeam(
 const MAX_AUTONOMOUS_WORKERS = 8;
 
 function makeSpawnWorkerCallback(teamId: string): (task: string, name?: string) => Promise<SpawnWorkerResult> {
-  return async (task: string, name?: string) => {
+  const spawnWorker = (task: string, name?: string): SpawnWorkerResult => {
     const team = state.teams.find((t) => t.id === teamId);
     const lead = state.sessions.find((s) => s.teamId === teamId && s.lead);
     if (!team || !lead?.branch) return { ok: false, error: "team or lead not ready yet" };
@@ -277,6 +277,7 @@ function makeSpawnWorkerCallback(teamId: string): (task: string, name?: string) 
     spawnIntoTeam(task, teamId, "sonnet", "medium", lead.branch, name);
     return { ok: true };
   };
+  return (task, name) => Promise.resolve(spawnWorker(task, name));
 }
 
 const SEQUENCED_LEAD_SUFFIX = `

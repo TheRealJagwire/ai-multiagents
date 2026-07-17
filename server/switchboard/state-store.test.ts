@@ -1,5 +1,5 @@
 import { beforeEach, describe, it } from "jsr:@std/testing/bdd";
-import { assert, assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertMatch } from "jsr:@std/assert";
 import type { Session } from "../../src/switchboard/types.ts";
 
 // STATE_FILE binds to appDataDir() at import time — override first.
@@ -144,7 +144,7 @@ describe("state-store", () => {
 
     resetState();
     await initPersistedState();
-    assertEquals(nextId("e"), "e-43");
+    assertMatch(nextId("e"), /^e-43-[0-9a-f]{8}$/);
   });
 
   it("falls back to scanning restored ids when the stored counter is stale", async () => {
@@ -162,7 +162,7 @@ describe("state-store", () => {
       }),
     );
     await initPersistedState();
-    assertEquals(nextId("e"), "e-100");
+    assertMatch(nextId("e"), /^e-100-[0-9a-f]{8}$/);
   });
 
   it("a corrupt state file degrades to empty state instead of failing startup", async () => {

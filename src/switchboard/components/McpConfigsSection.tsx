@@ -252,7 +252,7 @@ export function McpConfigsSection() {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={labelStyle}>Env (one KEY=VALUE per line)</div>
                 <textarea
-                  placeholder={"API_KEY=..."}
+                  placeholder="API_KEY=..."
                   value={mcpFormEnvText.value}
                   onInput={(e) => setMcpFormEnvText((e.target as HTMLTextAreaElement).value)}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)", resize: "none", height: 50 }}
@@ -274,7 +274,7 @@ export function McpConfigsSection() {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={labelStyle}>Headers (one KEY=VALUE per line)</div>
                 <textarea
-                  placeholder={"Authorization=Bearer ..."}
+                  placeholder="Authorization=Bearer ..."
                   value={mcpFormHeadersText.value}
                   onInput={(e) => setMcpFormHeadersText((e.target as HTMLTextAreaElement).value)}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)", resize: "none", height: 50 }}

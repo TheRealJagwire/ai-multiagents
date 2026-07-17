@@ -11,6 +11,7 @@
 
 import { Hono } from "jsr:@hono/hono";
 import { streamSSE } from "jsr:@hono/hono/streaming";
+import { timingSafeEqual } from "jsr:@std/crypto/timing-safe-equal";
 import { getKv } from "./kv.ts";
 import { mcpFetch } from "./mcp.ts";
 import {
@@ -40,13 +41,24 @@ export const orchestrationApp = new Hono<{ Variables: { board: Board } }>();
 
 // Single shared bearer token (plan section 6/9) — opt-in via env var so
 // local development doesn't need one set. If ORCHESTRATION_TOKEN is set,
-// every request must carry it.
+// every request must carry it. Compared timing-safely: a plain !== leaks
+// how many leading bytes matched, which is what lets a token be guessed
+// byte by byte if this were ever exposed off-loopback.
+function bearerMatches(header: string, token: string): boolean {
+  const enc = new TextEncoder();
+  const a = enc.encode(header);
+  const b = enc.encode(`Bearer ${token}`);
+  // timingSafeEqual throws on unequal lengths rather than returning false.
+  // Bailing early here only reveals the token's length, not its bytes.
+  return a.byteLength === b.byteLength && timingSafeEqual(a, b);
+}
+
 orchestrationApp.use("*", async (c, next) => {
   const token = Deno.env.get("ORCHESTRATION_TOKEN");
-  if (!token) return next();
-  const header = c.req.header("authorization") ?? "";
-  if (header !== `Bearer ${token}`) return c.text("unauthorized", 401);
-  return next();
+  if (token && !bearerMatches(c.req.header("authorization") ?? "", token)) {
+    return c.text("unauthorized", 401);
+  }
+  await next();
 });
 
 async function readJsonBody(req: Request): Promise<Record<string, unknown>> {

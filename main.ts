@@ -1,5 +1,6 @@
 import { Hono } from "jsr:@hono/hono";
 import { serveStatic } from "jsr:@hono/hono/deno";
+import { requestGuard } from "./server/request-guard.ts";
 import { switchboardApp } from "./server/switchboard/routes.ts";
 import { orchestrationApp } from "./server/orchestration/routes.ts";
 
@@ -10,6 +11,9 @@ import { orchestrationApp } from "./server/orchestration/routes.ts";
 const DIST_DIR = new URL("./dist", import.meta.url).pathname;
 
 const app = new Hono();
+
+// Rejects DNS-rebound Hosts and cross-site Origins — see request-guard.ts.
+app.use("/api/*", requestGuard(Deno.env.get("SWITCHBOARD_HOST")));
 
 app.route("/api/switchboard", switchboardApp);
 app.route("/api/orchestration", orchestrationApp);

@@ -154,8 +154,10 @@ export async function initPersistedState(): Promise<void> {
   // "e-42" again). The stored counter is authoritative; scanning restored
   // ids is the belt-and-suspenders for files written by older versions.
   let maxSeen = typeof parsed.counter === "number" ? parsed.counter : 0;
+  // The counter is the segment after the prefix: "e-42" (old format) and
+  // "e-42-9f3ac1d8" (current, with random suffix) both yield 42.
   const scan = (id: string) => {
-    const n = Number(id.slice(id.lastIndexOf("-") + 1));
+    const n = Number(id.split("-")[1]);
     if (Number.isFinite(n) && n > maxSeen) maxSeen = n;
   };
   state.sessions.forEach((s) => scan(s.id));

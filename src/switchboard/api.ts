@@ -153,7 +153,7 @@ async function request(path: string, init: RequestInit): Promise<void> {
   }
 }
 
-async function post(path: string, body?: Record<string, unknown>): Promise<void> {
+function post(path: string, body?: Record<string, unknown>): Promise<void> {
   return request(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -174,11 +174,11 @@ export function listDirectories(prefix: string): Promise<string[]> {
   return getJson<string[]>(`/dirs?prefix=${encodeURIComponent(prefix)}`);
 }
 
-async function del(path: string): Promise<void> {
+function del(path: string): Promise<void> {
   return request(path, { method: "DELETE" });
 }
 
-async function put(path: string, body?: Record<string, unknown>): Promise<void> {
+function put(path: string, body?: Record<string, unknown>): Promise<void> {
   return request(path, {
     method: "PUT",
     headers: { "content-type": "application/json" },

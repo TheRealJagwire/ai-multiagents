@@ -19,9 +19,15 @@ export const state: Snapshot = {
 };
 
 let counter = 0;
+// The counter keeps ids ordered and readable; the random suffix keeps them
+// unguessable — ids gate real actions (POST /events/:id/approve), so a
+// predictable "e-42" would let anything that can reach the API resolve an
+// approval it never saw. 32 bits of entropy is plenty at that call rate.
 export function nextId(prefix: string): string {
   counter += 1;
-  return `${prefix}-${counter}`;
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  const suffix = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${prefix}-${counter}-${suffix}`;
 }
 
 // state-store.ts persists the counter alongside the records so ids minted
