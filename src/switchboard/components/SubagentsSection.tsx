@@ -17,8 +17,9 @@ import {
   startEditSubagent,
   submitSubagent,
 } from "../actions.ts";
-import { ALL_MODELS as MODELS, chipState, effortLabel, modelLabel } from "../format.ts";
+import { chipState, effortLabel, modelLabel } from "../format.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
+import { ModelSelect } from "./ModelSelect.tsx";
 
 const EFFORTS: Effort[] = ["low", "medium", "high"];
 
@@ -181,18 +182,7 @@ export function SubagentsSection() {
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}>MODEL</span>
-            {MODELS.map((m) => (
-              <button
-                type="button"
-                key={m}
-                onClick={() => {
-                  subagentFormModel.value = m;
-                }}
-                style={chipStyle(chipState(subagentFormModel.value === m, false))}
-              >
-                {modelLabel(m)}
-              </button>
-            ))}
+            <ModelSelect value={subagentFormModel.value} onChange={(m) => (subagentFormModel.value = m)} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}>EFFORT</span>

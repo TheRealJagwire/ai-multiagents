@@ -1,4 +1,4 @@
-import type { Effort, Model, RecurrenceUnit } from "../types.ts";
+import type { Effort, RecurrenceUnit } from "../types.ts";
 import {
   defaultDirectory,
   dirSuggestions,
@@ -68,11 +68,11 @@ import {
   toggleSpawnMcpConfig,
   toggleSpawnRecurrenceDay,
 } from "../actions.ts";
-import { ALL_MODELS, chipState, effortLabel, modelLabel } from "../format.ts";
+import { chipState, effortLabel } from "../format.ts";
 import { providerOf } from "../types.ts";
+import { ModelSelect } from "./ModelSelect.tsx";
 import { chipStyle } from "./TeamMemberRow.tsx";
 
-const MODELS: Model[] = ALL_MODELS;
 const RECURRENCE_MODES: { id: RecurrenceMode; label: string }[] = [
   { id: "none", label: "Does not repeat" },
   { id: "interval", label: "Every…" },
@@ -448,16 +448,7 @@ export function SpawnModal() {
                         <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}>
                           MODEL
                         </span>
-                        {MODELS.map((m) => (
-                          <button
-                            type="button"
-                            key={m}
-                            onClick={() => setDraftMember(i, { model: m })}
-                            style={chipStyle(chipState(member.model === m, false))}
-                          >
-                            {modelLabel(m)}
-                          </button>
-                        ))}
+                        <ModelSelect value={member.model} onChange={(m) => setDraftMember(i, { model: m })} />
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                         <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}>
@@ -628,18 +619,7 @@ export function SpawnModal() {
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={labelStyle}>Model</div>
-                  <div style={{ display: "flex", gap: 5 }}>
-                    {MODELS.map((m) => (
-                      <button
-                        type="button"
-                        key={m}
-                        onClick={() => setMemberModel(m)}
-                        style={chipStyle(chipState(memberModel.value === m, false))}
-                      >
-                        {modelLabel(m)}
-                      </button>
-                    ))}
-                  </div>
+                  <ModelSelect value={memberModel.value} onChange={setMemberModel} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={labelStyle}>Effort</div>

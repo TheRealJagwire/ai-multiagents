@@ -25,10 +25,10 @@ import {
   queueMove,
   toggleManageExpanded,
 } from "../actions.ts";
-import { chipState, type ChipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, providerModels } from "../format.ts";
+import { chipState, type ChipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { PlanCard } from "./PlanCard.tsx";
-import { providerOf } from "../types.ts";
+import { SessionModelSelect } from "./ModelSelect.tsx";
 
 const EFFORTS: Effort[] = ["low", "medium", "high"];
 const effortRank: Record<Effort, number> = { low: 0, medium: 1, high: 2 };
@@ -214,21 +214,12 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
               >
                 MODEL
               </span>
-              {providerModels(providerOf(session.model)).map((m) => (
-                <button
-                  type="button"
-                  key={m}
-                  disabled={disableModelChange}
-                  onClick={disableModelChange ? undefined : () => queueModelChange(session.id, m)}
-                  style={{
-                    ...chipStyle(chipState(session.model === m, session.pendingModel === m)),
-                    cursor: disableModelChange ? "not-allowed" : "pointer",
-                    opacity: disableModelChange ? 0.5 : 1,
-                  }}
-                >
-                  {modelLabel(m)}
-                </button>
-              ))}
+              <SessionModelSelect
+                model={session.model}
+                pendingModel={session.pendingModel}
+                disabled={disableModelChange}
+                onChange={(m) => queueModelChange(session.id, m)}
+              />
             </div>
             <div
               style={{ display: "flex", alignItems: "center", gap: 5 }}

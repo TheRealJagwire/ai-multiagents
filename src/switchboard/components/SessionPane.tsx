@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { type Effort, type EventResolution, providerOf } from "../types.ts";
+import type { Effort, EventResolution } from "../types.ts";
 import {
   chatDrafts,
   confirmStop,
@@ -36,11 +36,12 @@ import {
   togglePause,
   toggleGrantsPopover,
 } from "../actions.ts";
-import { chipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, phaseLabel, providerModels, statusLabel } from "../format.ts";
+import { chipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, phaseLabel, statusLabel } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PlanCard } from "./PlanCard.tsx";
+import { SessionModelSelect } from "./ModelSelect.tsx";
 
 const TOOL_MESSAGE_PREVIEW_LINES = 4;
 
@@ -267,21 +268,12 @@ export function SessionPane() {
             >
               MODEL
             </span>
-            {providerModels(providerOf(session.model)).map((m) => (
-              <button
-                type="button"
-                key={m}
-                disabled={disablePause}
-                onClick={disablePause ? undefined : () => queueModelChange(session.id, m)}
-                style={{
-                  ...chipStyle(chipState(session.model === m, session.pendingModel === m)),
-                  cursor: disablePause ? "not-allowed" : "pointer",
-                  opacity: disablePause ? 0.5 : 1,
-                }}
-              >
-                {modelLabel(m)}
-              </button>
-            ))}
+            <SessionModelSelect
+              model={session.model}
+              pendingModel={session.pendingModel}
+              disabled={disablePause}
+              onChange={(m) => queueModelChange(session.id, m)}
+            />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }} title="Effort can't change mid-session — only model can">
             <span
