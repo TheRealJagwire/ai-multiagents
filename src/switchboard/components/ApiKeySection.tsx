@@ -1,5 +1,17 @@
-import { apiKeyConfigured, apiKeyDraft, apiKeyError, apiKeySaving, apiKeyTail } from "../store.ts";
-import { clearApiKey, saveApiKey } from "../actions.ts";
+import type { Signal } from "@preact/signals";
+import {
+  apiKeyConfigured,
+  apiKeyDraft,
+  apiKeyError,
+  apiKeySaving,
+  apiKeyTail,
+  geminiKeyConfigured,
+  geminiKeyDraft,
+  geminiKeyError,
+  geminiKeySaving,
+  geminiKeyTail,
+} from "../store.ts";
+import { clearApiKey, clearGeminiKey, saveApiKey, saveGeminiKey } from "../actions.ts";
 
 const inputStyle = {
   border: "1px solid var(--sb-border-3)",
@@ -12,43 +24,56 @@ const inputStyle = {
   flex: 1,
 };
 
-export function ApiKeySection() {
-  const configured = apiKeyConfigured.value;
-  const saving = apiKeySaving.value;
+interface KeyConfig {
+  title: string;
+  blurb: string;
+  placeholder: string;
+  tailPrefix: string;
+  noKeyLine: string;
+  configured: Signal<boolean>;
+  tail: Signal<string | null>;
+  draft: Signal<string>;
+  saving: Signal<boolean>;
+  error: Signal<string | null>;
+  save: () => Promise<void>;
+  clear: () => Promise<void>;
+}
+
+// One form per provider key, same look and behavior — both render inside
+// Settings › General (GeneralSection.tsx).
+function KeyForm({ config }: { config: KeyConfig }) {
+  const configured = config.configured.value;
+  const saving = config.saving.value;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 700 }}>Anthropic API key</div>
-      <div style={{ fontSize: 11.5, color: "var(--sb-text-4)", lineHeight: 1.5 }}>
-        Used by every session spawned after saving. Without one, sessions use your <code>claude login</code>{" "}
-        credentials (or an <code>ANTHROPIC_API_KEY</code> already set in the server's environment). The key is stored
-        on this machine only and never shown again after saving.
-      </div>
+      <div style={{ fontSize: 12, fontWeight: 700 }}>{config.title}</div>
+      <div style={{ fontSize: 11.5, color: "var(--sb-text-4)", lineHeight: 1.5 }}>{config.blurb}</div>
 
       <div style={{ fontSize: 11.5, fontWeight: 600, color: configured ? "var(--sb-text-3)" : "var(--sb-text-5)" }}>
-        {configured ? `Currently configured: sk-ant-…${apiKeyTail.value ?? ""}` : "No key configured."}
+        {configured ? `Currently configured: ${config.tailPrefix}${config.tail.value ?? ""}` : config.noKeyLine}
       </div>
 
       <form
         style={{ display: "flex", gap: 8 }}
         onSubmit={(e) => {
           e.preventDefault();
-          if (!saving && apiKeyDraft.value.trim()) void saveApiKey();
+          if (!saving && config.draft.value.trim()) void config.save();
         }}
       >
         <input
           type="password"
-          placeholder="sk-ant-…"
+          placeholder={config.placeholder}
           autocomplete="off"
-          value={apiKeyDraft.value}
+          value={config.draft.value}
           onInput={(e) => {
-            apiKeyDraft.value = (e.target as HTMLInputElement).value;
+            config.draft.value = (e.target as HTMLInputElement).value;
           }}
           style={inputStyle}
         />
         <button
           type="submit"
-          disabled={saving || !apiKeyDraft.value.trim()}
+          disabled={saving || !config.draft.value.trim()}
           style={{
             padding: "7px 14px",
             background: "var(--sb-primary)",
@@ -56,21 +81,21 @@ export function ApiKeySection() {
             borderRadius: 8,
             fontSize: 12,
             fontWeight: 600,
-            cursor: saving || !apiKeyDraft.value.trim() ? "default" : "pointer",
-            opacity: saving || !apiKeyDraft.value.trim() ? 0.5 : 1,
+            cursor: saving || !config.draft.value.trim() ? "default" : "pointer",
+            opacity: saving || !config.draft.value.trim() ? 0.5 : 1,
           }}
         >
           {configured ? "Replace" : "Save"}
         </button>
       </form>
 
-      {apiKeyError.value && <div style={{ fontSize: 11.5, color: "var(--sb-error-text, #c33)" }}>{apiKeyError.value}</div>}
+      {config.error.value && <div style={{ fontSize: 11.5, color: "var(--sb-error-text, #c33)" }}>{config.error.value}</div>}
 
       {configured && (
         <button
           type="button"
           disabled={saving}
-          onClick={() => void clearApiKey()}
+          onClick={() => void config.clear()}
           style={{
             alignSelf: "flex-start",
             fontSize: 11.5,
@@ -85,10 +110,52 @@ export function ApiKeySection() {
           Remove key
         </button>
       )}
-
-      <div style={{ fontSize: 11, color: "var(--sb-text-5)", lineHeight: 1.5 }}>
-        Already-running sessions keep the credentials they started with; the change applies from the next spawn.
-      </div>
     </div>
+  );
+}
+
+export function ApiKeySection() {
+  return (
+    <KeyForm
+      config={{
+        title: "Anthropic API key",
+        blurb: "Used by every Claude session spawned after saving. Without one, sessions use your claude login " +
+          "credentials (or an ANTHROPIC_API_KEY already set in the server's environment). The key is stored on " +
+          "this machine only and never shown again after saving. Already-running sessions keep the credentials " +
+          "they started with.",
+        placeholder: "sk-ant-…",
+        tailPrefix: "sk-ant-…",
+        noKeyLine: "No key configured.",
+        configured: apiKeyConfigured,
+        tail: apiKeyTail,
+        draft: apiKeyDraft,
+        saving: apiKeySaving,
+        error: apiKeyError,
+        save: saveApiKey,
+        clear: clearApiKey,
+      }}
+    />
+  );
+}
+
+export function GeminiKeySection() {
+  return (
+    <KeyForm
+      config={{
+        title: "Gemini API key",
+        blurb: "Used by Gemini-model sessions (Google ADK runtime). Required — unlike Claude, there is no " +
+          "login-based fallback. The key is stored on this machine only and never shown again after saving.",
+        placeholder: "AIza…",
+        tailPrefix: "AIza…",
+        noKeyLine: "No key configured — Gemini sessions won't start without one.",
+        configured: geminiKeyConfigured,
+        tail: geminiKeyTail,
+        draft: geminiKeyDraft,
+        saving: geminiKeySaving,
+        error: geminiKeyError,
+        save: saveGeminiKey,
+        clear: clearGeminiKey,
+      }}
+    />
   );
 }

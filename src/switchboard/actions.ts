@@ -11,6 +11,11 @@ import {
   defaultDirectory,
   defaultDirError,
   defaultDirSaving,
+  geminiKeyConfigured,
+  geminiKeyDraft,
+  geminiKeyError,
+  geminiKeySaving,
+  geminiKeyTail,
   KIND_FILTER_KEY,
   kindFilter,
   type SettingsSection,
@@ -150,6 +155,8 @@ export function ingestSnapshot(snapshot: Snapshot): void {
   catchUpMissedSchedules.value = snapshot.catchUpMissedSchedules;
   apiKeyConfigured.value = snapshot.apiKeyConfigured;
   apiKeyTail.value = snapshot.apiKeyTail;
+  geminiKeyConfigured.value = snapshot.geminiKeyConfigured;
+  geminiKeyTail.value = snapshot.geminiKeyTail;
   defaultDirectory.value = snapshot.defaultDirectory;
 }
 
@@ -191,6 +198,11 @@ export function replaceApiKeyStatus(configured: boolean, tail: string | null): v
   apiKeyTail.value = tail;
 }
 
+export function replaceGeminiKeyStatus(configured: boolean, tail: string | null): void {
+  geminiKeyConfigured.value = configured;
+  geminiKeyTail.value = tail;
+}
+
 export function replaceDefaultDirectory(value: string | null): void {
   defaultDirectory.value = value;
 }
@@ -198,6 +210,8 @@ export function replaceDefaultDirectory(value: string | null): void {
 export function openSettingsSection(section: SettingsSection): void {
   apiKeyDraft.value = "";
   apiKeyError.value = null;
+  geminiKeyDraft.value = "";
+  geminiKeyError.value = null;
   // Not a secret — prefill with the current value so editing means
   // "change this", not "retype it from scratch".
   defaultDirDraft.value = defaultDirectory.value ?? "";
@@ -214,6 +228,8 @@ export function closeSettingsModal(): void {
   // Never keep key material around after the modal closes.
   apiKeyDraft.value = "";
   apiKeyError.value = null;
+  geminiKeyDraft.value = "";
+  geminiKeyError.value = null;
   defaultDirError.value = null;
 }
 
@@ -241,6 +257,33 @@ export async function clearApiKey(): Promise<void> {
     apiKeyError.value = err instanceof Error ? err.message : String(err);
   } finally {
     apiKeySaving.value = false;
+  }
+}
+
+export async function saveGeminiKey(): Promise<void> {
+  geminiKeySaving.value = true;
+  geminiKeyError.value = null;
+  try {
+    await api.setGeminiKey(geminiKeyDraft.value);
+    geminiKeyDraft.value = "";
+    showToast("Gemini API key saved — applies to newly spawned sessions");
+  } catch (err) {
+    geminiKeyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    geminiKeySaving.value = false;
+  }
+}
+
+export async function clearGeminiKey(): Promise<void> {
+  geminiKeySaving.value = true;
+  geminiKeyError.value = null;
+  try {
+    await api.clearGeminiKey();
+    showToast("Gemini API key removed");
+  } catch (err) {
+    geminiKeyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    geminiKeySaving.value = false;
   }
 }
 

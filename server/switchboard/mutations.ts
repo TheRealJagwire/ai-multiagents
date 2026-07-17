@@ -124,6 +124,12 @@ export function pushApiKeyStatusReplace(configured: boolean, tail: string | null
   publish("api-key-status-replaced", { configured, tail });
 }
 
+export function pushGeminiKeyStatusReplace(configured: boolean, tail: string | null): void {
+  state.geminiKeyConfigured = configured;
+  state.geminiKeyTail = tail;
+  publish("gemini-key-status-replaced", { configured, tail });
+}
+
 export function pushDefaultDirectoryReplace(value: string | null): void {
   state.defaultDirectory = value;
   publish("default-directory-replaced", value);

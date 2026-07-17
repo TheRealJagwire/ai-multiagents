@@ -1,4 +1,4 @@
-import type { Effort, Model } from "../types.ts";
+import type { Effort } from "../types.ts";
 import {
   subagentDeleteConfirm,
   subagentEditingId,
@@ -17,10 +17,9 @@ import {
   startEditSubagent,
   submitSubagent,
 } from "../actions.ts";
-import { chipState, effortLabel, modelLabel } from "../format.ts";
+import { ALL_MODELS as MODELS, chipState, effortLabel, modelLabel } from "../format.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
 
-const MODELS: Model[] = ["haiku", "sonnet", "opus"];
 const EFFORTS: Effort[] = ["low", "medium", "high"];
 
 const inputStyle = {

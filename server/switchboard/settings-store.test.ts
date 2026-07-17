@@ -75,6 +75,19 @@ describe("settings-store", () => {
     assertEquals(settings.anthropicApiKey, "sk-ant-test-dir");
   });
 
+  it("round-trips a Gemini key independently of the Anthropic one", async () => {
+    await updateSettings({ anthropicApiKey: "sk-ant-test-both" });
+    await updateSettings({ geminiApiKey: "AIzaTest1234" });
+    const settings = await loadSettingsFromDisk();
+    assertEquals(settings.geminiApiKey, "AIzaTest1234");
+    assertEquals(settings.anthropicApiKey, "sk-ant-test-both");
+
+    await updateSettings({ geminiApiKey: undefined });
+    const after = await loadSettingsFromDisk();
+    assertEquals(after.geminiApiKey, undefined);
+    assertEquals(after.anthropicApiKey, "sk-ant-test-both");
+  });
+
   it("clearing the default directory removes the key entirely", async () => {
     await updateSettings({ defaultDirectory: "/repo/project" });
     await updateSettings({ defaultDirectory: undefined });

@@ -3,6 +3,7 @@ import {
   defaultDirectory,
   dirSuggestions,
   draftMembers,
+  geminiKeyConfigured,
   mcpConfigs,
   memberEffort,
   memberModel,
@@ -67,10 +68,11 @@ import {
   toggleSpawnMcpConfig,
   toggleSpawnRecurrenceDay,
 } from "../actions.ts";
-import { chipState, effortLabel, modelLabel } from "../format.ts";
+import { ALL_MODELS, chipState, effortLabel, modelLabel } from "../format.ts";
+import { providerOf } from "../types.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
 
-const MODELS: Model[] = ["haiku", "sonnet", "opus"];
+const MODELS: Model[] = ALL_MODELS;
 const RECURRENCE_MODES: { id: RecurrenceMode; label: string }[] = [
   { id: "none", label: "Does not repeat" },
   { id: "interval", label: "Every…" },
@@ -170,6 +172,13 @@ export function SpawnModal() {
     ? "Add to team"
     : "Start session";
   const validationError = spawnValidationError.value;
+
+  // Whether any session this spawn would start runs on Gemini — drives the
+  // plan-mode disable (Claude-only feature) and the missing-key warning.
+  const relevantMembers = spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value;
+  const anyGemini = modalMode.value === "new"
+    ? relevantMembers.some((m) => providerOf(m.model) === "gemini")
+    : providerOf(memberModel.value) === "gemini";
 
   return (
     <div
@@ -652,14 +661,41 @@ export function SpawnModal() {
           )}
 
         {modalMode.value !== "existing" && (
-          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              fontSize: 11.5,
+              color: anyGemini ? "var(--sb-text-5)" : "var(--sb-text-3)",
+              cursor: anyGemini ? "not-allowed" : "pointer",
+            }}
+          >
             <input
               type="checkbox"
-              checked={spawnPlanFirst.value}
+              checked={!anyGemini && spawnPlanFirst.value}
+              disabled={anyGemini}
               onChange={(e) => setSpawnPlanFirst((e.target as HTMLInputElement).checked)}
             />
-            Start in plan mode — review the plan before it touches anything
+            {anyGemini
+              ? "Start in plan mode — not available for Gemini sessions"
+              : "Start in plan mode — review the plan before it touches anything"}
           </label>
+        )}
+
+        {modalMode.value !== "existing" && anyGemini && !geminiKeyConfigured.value && (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "var(--sb-waiting-text)",
+              background: "var(--sb-waiting-bg)",
+              border: "1px solid var(--sb-waiting-dot)",
+              borderRadius: 8,
+              padding: "8px 12px",
+            }}
+          >
+            No Gemini API key is configured — Gemini sessions won't start. Add one in Settings › General first.
+          </div>
         )}
 
         {modalMode.value !== "existing" && (

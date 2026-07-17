@@ -16,9 +16,13 @@ export interface PersistedSettings {
   // file permissions; never sent to the frontend (only a configured
   // flag + tail for display — see api-key-actions.ts).
   anthropicApiKey?: string;
+  // Gemini key for ADK-driven sessions (see gemini-key-actions.ts). Same
+  // handling as the Anthropic key: stored plaintext with 0600 perms, never
+  // sent to the frontend beyond a configured flag + display tail.
+  geminiApiKey?: string;
   // An absolute path the spawn flow can opt into instead of typing one out
   // each time (see general-settings-actions.ts). Not a secret — unlike the
-  // API key, this is sent to the frontend as-is.
+  // API keys, this is sent to the frontend as-is.
   defaultDirectory?: string;
 }
 
@@ -38,6 +42,9 @@ export async function loadSettingsFromDisk(): Promise<PersistedSettings> {
         : DEFAULT_SETTINGS.catchUpMissedSchedules,
       ...(typeof v.anthropicApiKey === "string" && v.anthropicApiKey.length > 0
         ? { anthropicApiKey: v.anthropicApiKey }
+        : {}),
+      ...(typeof v.geminiApiKey === "string" && v.geminiApiKey.length > 0
+        ? { geminiApiKey: v.geminiApiKey }
         : {}),
       ...(typeof v.defaultDirectory === "string" && v.defaultDirectory.length > 0
         ? { defaultDirectory: v.defaultDirectory }

@@ -1,10 +1,11 @@
 import type { JSX } from "preact";
-import type { Effort, Model, Session } from "../types.ts";
+import type { Effort, Session } from "../types.ts";
 import {
   deleteSessionConfirm,
   expandedMemberId,
   latestPlanBySession,
   moveConfirm,
+  now,
   selectedSessionId,
   sessions,
   teams,
@@ -24,11 +25,11 @@ import {
   queueMove,
   toggleManageExpanded,
 } from "../actions.ts";
-import { chipState, type ChipState, costPhrase, effortLabel, modelLabel } from "../format.ts";
+import { chipState, type ChipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, providerModels } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { PlanCard } from "./PlanCard.tsx";
+import { providerOf } from "../types.ts";
 
-const MODELS: Model[] = ["haiku", "sonnet", "opus"];
 const EFFORTS: Effort[] = ["low", "medium", "high"];
 const effortRank: Record<Effort, number> = { low: 0, medium: 1, high: 2 };
 
@@ -159,6 +160,12 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {/* The at-a-glance metadata the old Sessions tab used to carry —
+            this roster row is now the one place to scan the whole fleet. */}
+        <span className="sb-mono" style={{ fontSize: 10.5, color: "var(--sb-text-5)", flex: "none" }}>
+          {session.status !== "done" && `${elapsed(session.startedAt, now.value)} · `}
+          {formatCost(session.cost)}
+        </span>
         <span style={{ fontSize: 11, color: "var(--sb-text-5)" }}>{session.statusLine}</span>
         <button
           type="button"
@@ -207,7 +214,7 @@ export function TeamMemberRow({ session, branch, showRole }: TeamMemberRowProps)
               >
                 MODEL
               </span>
-              {MODELS.map((m) => (
+              {providerModels(providerOf(session.model)).map((m) => (
                 <button
                   type="button"
                   key={m}

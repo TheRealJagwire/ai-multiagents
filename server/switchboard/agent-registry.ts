@@ -1,11 +1,23 @@
-// In-memory bookkeeping for live Agent SDK sessions: the running Query per
-// Switchboard session id, and pending tool-call approvals waiting on a human
-// to click approve/deny in the feed.
+// In-memory bookkeeping for live agent sessions: the running driver handle
+// per Switchboard session id, and pending tool-call approvals waiting on a
+// human to click approve/deny in the feed.
+//
+// Deliberately SDK-free: the handle exposes only the narrow lifecycle
+// surface the rest of the app actually calls, so a session can be driven by
+// the Claude Agent SDK (agent-sessions.ts) or Google ADK (adk-sessions.ts)
+// without the consumers caring which.
 
-import type { Query } from "npm:@anthropic-ai/claude-agent-sdk@^0.3.204";
+import type { Model } from "../../src/switchboard/types.ts";
 
 export interface AgentSessionHandle {
-  query: Query;
+  // Stop whatever turn is in flight, leaving the session alive for more
+  // messages. Used by pause and as the first step of termination.
+  interrupt: () => Promise<void>;
+  // Tear the driver down for good — no more messages will be accepted.
+  close: () => void;
+  // Live model switch, applied at the driver's next opportunity. Callers
+  // guarantee same-provider (see team-actions.ts's queueModelChange guard).
+  setModel: (model: Model) => Promise<void>;
   pushMessage: (text: string) => void;
   dir: string;
   // The process's cwd — a real worktree checkout, or `dir` itself when the

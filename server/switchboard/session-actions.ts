@@ -31,7 +31,7 @@ export function togglePause(sid: string): void {
     handle.pausedMidTurn = session.status === "running" || session.status === "waiting";
     pushSessionPatch(sid, { status: "paused", statusLine: "Paused by you" });
     pushFeedEvent({ sid, kind: "info", own: true, verb: "paused by you" });
-    handle.query.interrupt().catch((err) => {
+    handle.interrupt().catch((err) => {
       pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to pause: ${String(err)}` });
     });
   }
@@ -48,8 +48,8 @@ function terminateAgentProcess(sid: string): void {
   unregisterAgentSession(sid);
 
   (async () => {
-    await handle.query.interrupt().catch(() => {});
-    handle.query.close();
+    await handle.interrupt().catch(() => {});
+    handle.close();
     if (handle.branch) {
       await removeWorktree(handle.dir, handle.worktreePath);
       pushFeedEvent({ sid, kind: "info", own: false, verb: `worktree removed — work saved on branch ${handle.branch}` });

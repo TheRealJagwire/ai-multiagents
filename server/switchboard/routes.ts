@@ -23,6 +23,7 @@ import { addMcpConfig, deleteMcpConfig, updateMcpConfig } from "./mcp-actions.ts
 import { addSkill, addSubagent, deleteSkill, deleteSubagent, updateSkill, updateSubagent } from "./library-actions.ts";
 import { createSchedule, deleteSchedule, initSchedules, setCatchUpMissedSchedules, startScheduler } from "./schedule-actions.ts";
 import { clearAnthropicApiKey, initApiKey, setAnthropicApiKey } from "./api-key-actions.ts";
+import { clearGeminiApiKey, initGeminiApiKey, setGeminiApiKey } from "./gemini-key-actions.ts";
 import { initDefaultDirectory, setDefaultDirectory } from "./general-settings-actions.ts";
 import { listDirectories } from "./dir-listing.ts";
 import { undoAction } from "./undo.ts";
@@ -377,6 +378,19 @@ switchboardApp.delete("/settings/api-key", async (c) => {
   return c.body(null, 204);
 });
 
+switchboardApp.post("/settings/gemini-key", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const key = typeof body.key === "string" ? body.key : "";
+  const result = await setGeminiApiKey(key);
+  if (result) return c.json(result, 400);
+  return c.body(null, 204);
+});
+
+switchboardApp.delete("/settings/gemini-key", async (c) => {
+  await clearGeminiApiKey();
+  return c.body(null, 204);
+});
+
 // routes.ts is imported exactly once, at server startup (main.ts) — these
 // top-level awaits mean main.ts's Deno.serve only starts accepting
 // requests after persisted state and schedules are loaded, so GET
@@ -384,6 +398,7 @@ switchboardApp.delete("/settings/api-key", async (c) => {
 // first: schedule reconciliation may reference restored sessions by id.
 await initPersistedState();
 await initApiKey();
+await initGeminiApiKey();
 await initDefaultDirectory();
 await initSchedules();
 startScheduler();

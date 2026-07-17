@@ -27,6 +27,7 @@ import {
   replaceApiKeyStatus,
   replaceCatchUpMissedSchedules,
   replaceDefaultDirectory,
+  replaceGeminiKeyStatus,
   replaceMcpConfigs,
   replaceSchedules,
   replaceSkills,
@@ -56,7 +57,6 @@ import {
 import { NavRail } from "./components/NavRail.tsx";
 import { LeftRail } from "./components/LeftRail.tsx";
 import { FeedView } from "./components/FeedView.tsx";
-import { SessionsTab } from "./components/SessionsTab.tsx";
 import { TeamsTab } from "./components/TeamsTab.tsx";
 import { SessionPane } from "./components/SessionPane.tsx";
 import { Toast } from "./components/Toast.tsx";
@@ -102,6 +102,7 @@ export function App() {
         onSchedulesReplaced: replaceSchedules,
         onCatchUpMissedSchedulesReplaced: replaceCatchUpMissedSchedules,
         onApiKeyStatusReplaced: replaceApiKeyStatus,
+        onGeminiKeyStatusReplaced: replaceGeminiKeyStatus,
         onDefaultDirectoryReplaced: replaceDefaultDirectory,
         onConnectionChange: handleConnectionChange,
         });
@@ -239,7 +240,6 @@ export function App() {
           <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
             <LeftRail />
             {activeTab.value === "feed" && <FeedView />}
-            {activeTab.value === "sessions" && <SessionsTab />}
             {activeTab.value === "teams" && <TeamsTab />}
             <SessionPane />
           </div>

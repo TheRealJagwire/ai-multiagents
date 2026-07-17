@@ -18,8 +18,17 @@ export type SessionPhase =
   | "stopped"
   | "done";
 
-export type Model = "haiku" | "sonnet" | "opus";
+export type Model = "haiku" | "sonnet" | "opus" | "gemini-flash" | "gemini-pro";
 export type Effort = "low" | "medium" | "high";
+
+// Which agent runtime drives a session is derived from its model name, not
+// stored separately — the model string is the single source of truth, so no
+// Session/state migration was needed when Gemini support arrived.
+export type Provider = "claude" | "gemini";
+
+export function providerOf(model: Model): Provider {
+  return model.startsWith("gemini") ? "gemini" : "claude";
+}
 
 export interface PendingMove {
   target: string | null;
@@ -246,6 +255,9 @@ export interface Snapshot {
   // this" display.
   apiKeyConfigured: boolean;
   apiKeyTail: string | null;
+  // Same status-only treatment for the Gemini key (ADK-driven sessions).
+  geminiKeyConfigured: boolean;
+  geminiKeyTail: string | null;
   // Persisted in Settings › General — the spawn flow can opt into this
   // instead of typing a directory out each time. Not a secret, so (unlike
   // the API key) the actual value is sent to the frontend.

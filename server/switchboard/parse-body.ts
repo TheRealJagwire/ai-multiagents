@@ -5,7 +5,7 @@
 
 import type { Effort, McpTransport, Model, TeamCoordination } from "../../src/switchboard/types.ts";
 
-export const MODELS: Model[] = ["haiku", "sonnet", "opus"];
+export const MODELS: Model[] = ["haiku", "sonnet", "opus", "gemini-flash", "gemini-pro"];
 export const EFFORTS: Effort[] = ["low", "medium", "high"];
 export const MCP_TRANSPORTS: McpTransport[] = ["stdio", "http", "sse"];
 export const TEAM_COORDINATIONS: TeamCoordination[] = ["classic", "sequenced", "autonomous"];

@@ -1,4 +1,4 @@
-import type { Effort, Model, Recurrence, SessionPhase, SessionStatus } from "./types.ts";
+import { type Effort, type Model, type Provider, providerOf, type Recurrence, type SessionPhase, type SessionStatus } from "./types.ts";
 
 // nowMs defaults to Date.now() for callers that don't care about live
 // ticking; components that want the string to update on its own pass
@@ -19,8 +19,24 @@ export function formatCost(cost: number): string {
   return `$${cost.toFixed(2)}`;
 }
 
-const modelLabels: Record<Model, string> = { haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" };
+const modelLabels: Record<Model, string> = {
+  haiku: "Haiku",
+  sonnet: "Sonnet",
+  opus: "Opus",
+  "gemini-flash": "Gemini Flash",
+  "gemini-pro": "Gemini Pro",
+};
 const effortLabels: Record<Effort, string> = { low: "Low", medium: "Med", high: "High" };
+
+// The one model list every picker renders from — grouped by provider so the
+// UI can show Claude and Gemini options distinctly, and so model-change
+// chips can restrict to the session's own provider (a live session can't
+// hop runtimes; see providerModels).
+export const ALL_MODELS: Model[] = ["haiku", "sonnet", "opus", "gemini-flash", "gemini-pro"];
+
+export function providerModels(provider: Provider): Model[] {
+  return ALL_MODELS.filter((m) => providerOf(m) === provider);
+}
 
 export function modelLabel(model: Model): string {
   return modelLabels[model];
@@ -68,7 +84,10 @@ export function elapsed(startedAt: number, nowMs: number = Date.now()): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-const modelRate: Record<Model, number> = { haiku: 1, sonnet: 3, opus: 15 };
+// Rough relative per-step cost, only ever compared within one provider —
+// the pickers never offer a cross-provider pending change, so ratios
+// between the claude and gemini entries are never shown to anyone.
+const modelRate: Record<Model, number> = { haiku: 1, sonnet: 3, opus: 15, "gemini-flash": 1, "gemini-pro": 8 };
 
 export function costPhrase(from: Model, to: Model): string {
   const ratio = modelRate[to] / modelRate[from];

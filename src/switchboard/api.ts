@@ -22,6 +22,7 @@ export interface EventHandlers {
   onSchedulesReplaced: (schedules: Schedule[]) => void;
   onCatchUpMissedSchedulesReplaced: (value: boolean) => void;
   onApiKeyStatusReplaced: (configured: boolean, tail: string | null) => void;
+  onGeminiKeyStatusReplaced: (configured: boolean, tail: string | null) => void;
   onDefaultDirectoryReplaced: (value: string | null) => void;
   onConnectionChange: (connected: boolean) => void;
 }
@@ -124,6 +125,11 @@ export function subscribeToEvents(handlers: EventHandlers): () => void {
   source.addEventListener("api-key-status-replaced", (message) => {
     const { configured, tail } = JSON.parse((message as MessageEvent).data) as { configured: boolean; tail: string | null };
     handlers.onApiKeyStatusReplaced(configured, tail);
+  });
+
+  source.addEventListener("gemini-key-status-replaced", (message) => {
+    const { configured, tail } = JSON.parse((message as MessageEvent).data) as { configured: boolean; tail: string | null };
+    handlers.onGeminiKeyStatusReplaced(configured, tail);
   });
 
   source.addEventListener("default-directory-replaced", (message) => {
@@ -378,4 +384,12 @@ export function setApiKey(key: string): Promise<void> {
 
 export function clearApiKey(): Promise<void> {
   return del(`/settings/api-key`);
+}
+
+export function setGeminiKey(key: string): Promise<void> {
+  return post(`/settings/gemini-key`, { key });
+}
+
+export function clearGeminiKey(): Promise<void> {
+  return del(`/settings/gemini-key`);
 }

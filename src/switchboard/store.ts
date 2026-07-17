@@ -26,7 +26,10 @@ export interface DraftMember {
 }
 
 export type ActivityFilter = "all" | "unread";
-export type Tab = "feed" | "sessions" | "teams";
+// "sessions" was a third tab (read-only card grid of all sessions) — removed
+// as redundant: the always-visible LeftRail and the Teams tab both list every
+// session, and Teams is the one with management controls.
+export type Tab = "feed" | "teams";
 
 export interface RailGroup {
   id: string | null; // null = independent
@@ -45,9 +48,11 @@ export const skills = signal<Skill[]>([]);
 export const subagents = signal<SubagentPreset[]>([]);
 export const schedules = signal<Schedule[]>([]);
 export const catchUpMissedSchedules = signal(false);
-// Status only — the key itself never reaches the frontend.
+// Status only — the keys themselves never reach the frontend.
 export const apiKeyConfigured = signal(false);
 export const apiKeyTail = signal<string | null>(null);
+export const geminiKeyConfigured = signal(false);
+export const geminiKeyTail = signal<string | null>(null);
 // The spawn flow's opt-in default — not a secret, sent as-is.
 export const defaultDirectory = signal<string | null>(null);
 
@@ -222,6 +227,9 @@ export const settingsSection = signal<SettingsSection | null>(null);
 export const apiKeyDraft = signal("");
 export const apiKeySaving = signal(false);
 export const apiKeyError = signal<string | null>(null);
+export const geminiKeyDraft = signal("");
+export const geminiKeySaving = signal(false);
+export const geminiKeyError = signal<string | null>(null);
 export const defaultDirDraft = signal("");
 export const defaultDirSaving = signal(false);
 export const defaultDirError = signal<string | null>(null);

@@ -1,6 +1,6 @@
 import { defaultDirDraft, defaultDirectory, defaultDirError, defaultDirSaving } from "../store.ts";
 import { clearDefaultDirectory, saveDefaultDirectory } from "../actions.ts";
-import { ApiKeySection } from "./ApiKeySection.tsx";
+import { ApiKeySection, GeminiKeySection } from "./ApiKeySection.tsx";
 
 const inputStyle = {
   border: "1px solid var(--sb-border-3)",
@@ -23,6 +23,10 @@ export function GeneralSection() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <ApiKeySection />
+
+      <div style={{ height: 1, background: "var(--sb-border)" }} />
+
+      <GeminiKeySection />
 
       <div style={{ height: 1, background: "var(--sb-border)" }} />
 

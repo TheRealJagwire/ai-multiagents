@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Effort, EventResolution, Model } from "../types.ts";
+import { type Effort, type EventResolution, providerOf } from "../types.ts";
 import {
   chatDrafts,
   confirmStop,
@@ -36,7 +36,7 @@ import {
   togglePause,
   toggleGrantsPopover,
 } from "../actions.ts";
-import { chipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, phaseLabel, statusLabel } from "../format.ts";
+import { chipState, costPhrase, effortLabel, elapsed, formatCost, modelLabel, phaseLabel, providerModels, statusLabel } from "../format.ts";
 import { statusColor } from "../statusColors.ts";
 import { chipStyle } from "./TeamMemberRow.tsx";
 import { Markdown } from "./Markdown.tsx";
@@ -84,7 +84,6 @@ function ToolMessage({ text }: { text: string }) {
   );
 }
 
-const MODELS: Model[] = ["haiku", "sonnet", "opus"];
 const EFFORTS: Effort[] = ["low", "medium", "high"];
 const effortRank: Record<Effort, number> = { low: 0, medium: 1, high: 2 };
 
@@ -268,7 +267,7 @@ export function SessionPane() {
             >
               MODEL
             </span>
-            {MODELS.map((m) => (
+            {providerModels(providerOf(session.model)).map((m) => (
               <button
                 type="button"
                 key={m}

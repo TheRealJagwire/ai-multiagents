@@ -1,4 +1,4 @@
-import type { Effort, Model, Team } from "../../src/switchboard/types.ts";
+import { type Effort, type Model, providerOf, type Team } from "../../src/switchboard/types.ts";
 import { findSession, state } from "./state.ts";
 import { pushFeedEvent, pushSessionPatch, pushTeamsReplace } from "./mutations.ts";
 import { deleteSession } from "./session-actions.ts";
@@ -40,6 +40,13 @@ export function queueModelChange(sid: string, model: Model): void {
   const session = findSession(sid);
   if (session.status === "done" || session.status === "stopped") return;
   if (session.model === model) return;
+  // A live session can't hop runtimes — the driver (Claude SDK vs ADK) was
+  // chosen at spawn from the model's provider. The UI only offers
+  // same-provider chips, but guard here too against stale clients.
+  if (providerOf(session.model) !== providerOf(model)) {
+    pushFeedEvent({ sid, kind: "error", own: false, verb: `can't switch a running session between providers (${session.model} → ${model})` });
+    return;
+  }
 
   pushSessionPatch(sid, { pendingModel: model });
   pushFeedEvent({ sid, kind: "info", own: true, verb: `model change queued: → ${model} at the next step boundary` });
@@ -63,7 +70,7 @@ function executeModelChange(sid: string): void {
     return;
   }
 
-  handle.query.setModel(model)
+  handle.setModel(model)
     .then(() => {
       pushSessionPatch(sid, { model, pendingModel: null });
       pushFeedEvent({ sid, kind: "info", own: false, verb: `model changed to ${model} at step boundary` });

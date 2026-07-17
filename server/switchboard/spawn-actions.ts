@@ -1,7 +1,8 @@
-import type { Effort, Model, Session, TeamCoordination } from "../../src/switchboard/types.ts";
+import { type Effort, type Model, providerOf, type Session, type TeamCoordination } from "../../src/switchboard/types.ts";
 import { nextId, state } from "./state.ts";
 import { pushFeedEvent, pushSessionAdd, pushSessionPatch, pushTeamsReplace, pushTranscriptMessage } from "./mutations.ts";
 import { spawnAgentSession, type SpawnWorkerResult } from "./agent-sessions.ts";
+import { spawnAdkSession } from "./adk-sessions.ts";
 import {
   assertDirExists,
   assertGitRepo,
@@ -36,11 +37,26 @@ function startWorktreeAndSession(
   onSpawnWorker?: (task: string, name?: string) => Promise<SpawnWorkerResult>,
   planFirst?: boolean,
 ): void {
+  // The model's provider picks the runtime: Claude Agent SDK or Google ADK.
+  // Two Claude-only features degrade for gemini — noted in the transcript
+  // rather than silently dropped, so the user knows why the checkbox they
+  // ticked isn't doing anything.
+  const gemini = providerOf(model) === "gemini";
+  const spawn = gemini ? spawnAdkSession : spawnAgentSession;
+  if (gemini && planFirst) {
+    pushTranscriptMessage(sid, { k: "note", text: "Plan mode isn't available for Gemini sessions yet — starting normally." });
+    planFirst = false;
+  }
+  if (gemini && mcpConfigIds.length > 0) {
+    pushTranscriptMessage(sid, { k: "note", text: "MCP servers aren't available for Gemini sessions yet — starting without them." });
+    mcpConfigIds = [];
+  }
+
   (async () => {
     if (!useWorktree) {
       await assertDirExists(dir);
       pushSessionPatch(sid, { statusLine: "Starting up…" });
-      await spawnAgentSession(sid, task, {
+      await spawn(sid, task, {
         dir,
         worktreePath: dir,
         branch: null,
@@ -63,7 +79,7 @@ function startWorktreeAndSession(
     await createWorktree(dir, baseRef, branch, worktreePath);
     pushSessionPatch(sid, { worktreePath, branch, statusLine: "Starting up…" });
 
-    await spawnAgentSession(sid, task, { dir, worktreePath, branch, model, effort, mcpConfigIds, onSpawnWorker, planFirst });
+    await spawn(sid, task, { dir, worktreePath, branch, model, effort, mcpConfigIds, onSpawnWorker, planFirst });
   })().catch((err) => {
     pushSessionPatch(sid, { status: "error", statusLine: "Failed to start", phase: "blocked" });
     pushFeedEvent({ sid, kind: "error", own: false, verb: `failed to start real session: ${String(err)}` });

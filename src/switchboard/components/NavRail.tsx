@@ -4,7 +4,6 @@ import type { SettingsSection } from "../store.ts";
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "feed", icon: "☰", label: "Feed" },
-  { id: "sessions", icon: "❐", label: "Sessions" },
   { id: "teams", icon: "⚇", label: "Teams" },
 ];
 
