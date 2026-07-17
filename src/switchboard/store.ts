@@ -217,7 +217,7 @@ export const subagentDeleteConfirm = signal<string | null>(null);
 // Settings modal — opened per-section from the nav rail's individual
 // buttons; null = closed. The API-key draft is write-only: never
 // prefilled from the server.
-export type SettingsSection = "general" | "api-keys" | "mcp" | "skills" | "subagents";
+export type SettingsSection = "general" | "mcp" | "skills" | "subagents";
 export const settingsSection = signal<SettingsSection | null>(null);
 export const apiKeyDraft = signal("");
 export const apiKeySaving = signal(false);
