@@ -5,7 +5,7 @@ import type { Session } from "../../src/switchboard/types.ts";
 
 // Isolate state-store file paths before the module graph loads.
 Deno.env.set("SWITCHBOARD_DATA_DIR", await Deno.makeTempDir({ prefix: "sb-adk-tools-test-" }));
-const { buildCodingTools, gateToolCall, settlePendingGates } = await import("./adk-tools.ts");
+const { beginPlanning, buildCodingTools, clearPlanPhase, gateToolCall, settlePendingGates } = await import("./adk-tools.ts");
 const { registerAgentSession, unregisterAgentSession, resolvePendingApproval } = await import("./agent-registry.ts");
 const { state, setIdCounter } = await import("./state.ts");
 
@@ -72,9 +72,9 @@ afterEach(async () => {
   await new Promise((r) => setTimeout(r, 500));
 });
 
-function tools(sessionAllowAll = false) {
+function tools(sessionAllowAll = false, planFirst = false) {
   registerHandle("s-1", sessionAllowAll);
-  const list = buildCodingTools({ sid: "s-1", worktreePath: worktree, currentSignal: () => undefined });
+  const list = buildCodingTools({ sid: "s-1", worktreePath: worktree, currentSignal: () => undefined, planFirst });
   return Object.fromEntries(list.map((t) => [t.name, t]));
 }
 
@@ -167,5 +167,63 @@ describe("adk-tools approval gating", () => {
     const result = await resultPromise as { ok?: boolean };
     assertEquals(result.ok, true);
     assertEquals(await Deno.readTextFile(join(worktree, "d.txt")), "yes");
+  });
+});
+
+describe("adk-tools plan mode", () => {
+  it("exposes submit_plan only when planFirst is set", () => {
+    assert(!("submit_plan" in tools(false, false)), "no submit_plan without planFirst");
+    assert("submit_plan" in tools(false, true), "submit_plan present with planFirst");
+  });
+
+  it("blocks mutating tools while planning, without posting an approval event", async () => {
+    const t = tools(false, true);
+    beginPlanning("s-1");
+    const w = await t.write_file.runAsync({ args: { path: "x.txt", content: "no" }, toolContext: noContext }) as { error?: string };
+    assert(w.error?.includes("plan mode"));
+    const b = await t.bash.runAsync({ args: { command: "ls" }, toolContext: noContext }) as { error?: string };
+    assert(b.error?.includes("plan mode"));
+    assertEquals(state.events.filter((e) => e.kind === "approval").length, 0, "no gate while planning");
+    await Deno.stat(join(worktree, "x.txt")).then(() => assert(false, "must not write while planning"), () => {});
+    clearPlanPhase("s-1");
+  });
+
+  it("submit_plan posts a plan artifact + approval; approving unlocks mutating tools in the same session", async () => {
+    const t = tools(false, true);
+    beginPlanning("s-1");
+
+    const submitPromise = t.submit_plan.runAsync({ args: { plan: "Step one.\nStep two." }, toolContext: noContext });
+    await new Promise((r) => setTimeout(r, 10));
+    assert(state.events.some((e) => e.kind === "artifact" && e.artName === "Plan"), "plan artifact posted");
+    assert(state.transcripts["s-1"]?.some((m) => m.k === "plan"), "plan transcript card");
+    const gate = state.events.find((e) => e.kind === "approval")!;
+    resolvePendingApproval(gate.id, { allow: true });
+    const submit = await submitPromise as { ok?: boolean };
+    assertEquals(submit.ok, true);
+
+    // Now a mutating tool proceeds (gates normally instead of being blocked).
+    const wPromise = t.write_file.runAsync({ args: { path: "y.txt", content: "yes" }, toolContext: noContext });
+    await new Promise((r) => setTimeout(r, 10));
+    const wGate = state.events.find((e) => e.kind === "approval" && e.command?.includes("write y.txt"))!;
+    assert(wGate, "write_file now gates instead of refusing");
+    resolvePendingApproval(wGate.id, { allow: true });
+    assertEquals((await wPromise as { ok?: boolean }).ok, true);
+    clearPlanPhase("s-1");
+  });
+
+  it("a denied plan keeps mutating tools blocked and tells the model to revise", async () => {
+    const t = tools(false, true);
+    beginPlanning("s-1");
+
+    const submitPromise = t.submit_plan.runAsync({ args: { plan: "bad plan" }, toolContext: noContext });
+    await new Promise((r) => setTimeout(r, 10));
+    const gate = state.events.find((e) => e.kind === "approval")!;
+    resolvePendingApproval(gate.id, { allow: false, message: "Denied by the user." });
+    const submit = await submitPromise as { error?: string };
+    assert(submit.error?.includes("Revise"));
+
+    const w = await t.write_file.runAsync({ args: { path: "z.txt", content: "no" }, toolContext: noContext }) as { error?: string };
+    assert(w.error?.includes("plan mode"), "still blocked after a denied plan");
+    clearPlanPhase("s-1");
   });
 });

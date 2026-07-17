@@ -98,6 +98,16 @@ Every team is anchored to a **directory** (an existing git repo) and a **base re
 
 Teams support three coordination modes (`spawn-actions.ts`): **plain** (all members spawn at once, coordination limited to kickoff task text), **sequenced** (only the lead spawns; it writes a `SWITCHBOARD_TASKS.md` spec — parsed by `team-spec.ts` — and workers are then spawned from it, branching off the lead's branch), and **autonomous** (the lead gets a `spawn_worker` SDK tool and decides itself when to bring on workers).
 
+### The Google ADK (Gemini) integration
+
+Sessions and team members can run on **Gemini** instead of Claude — the runtime is chosen at spawn from the model name (`providerOf` in `types.ts`): `gemini-flash`/`gemini-pro` route through Google's Agent Development Kit (`@google/adk`), everything else through the Claude SDK. Both drivers register the same SDK-neutral `AgentSessionHandle` (`interrupt`/`close`/`setModel`), so pause/stop/model-change/approvals work identically regardless of runtime.
+
+- `adk-sessions.ts` — `spawnAdkSession()` runs one `runner.runAsync()` per user turn against an `InMemorySessionService` that carries the conversation history. `translateAdkEvent()` maps ADK events (model text, function calls/responses, usage) into the same `mutations.ts` calls as the Claude driver. Cost/context are best-effort from `usageMetadata`.
+- `adk-tools.ts` — ADK ships **no coding tools**, so these are ours: `read_file`/`list_dir`/`grep` (read-only) and `write_file`/`edit_file`/`bash`/`spawn_worker` (each calls `gateToolCall()`, reproducing the exact approval flow the Claude driver's `canUseTool` runs). File tools are jailed to the session's worktree.
+- **Plan mode** is enforced in our tools rather than the SDK: a plan-first session starts in a `planning` phase where mutating tools refuse until the model calls `submit_plan` (which renders the same PlanCard/artifact as Claude's ExitPlanMode and gates on user approval); approval flips the phase and execution continues in the same turn.
+- **MCP servers** (`adk-mcp.ts`) are exposed through ADK's `MCPToolset`, but every discovered tool is wrapped so its call is gated for approval like any other — the model never reaches a remote MCP tool without a prompt. stdio and HTTP transports both map from the existing MCP config library.
+- **Auth** is a separate Gemini API key (`gemini-key-actions.ts`, Settings › General) — unlike Claude there's no login-based fallback, so a Gemini spawn with no key fails fast with a clear error. Effort maps to Gemini's thinking budget.
+
 ### Data flow for a spawn
 
 1. Frontend `POST /api/switchboard/sessions` (with `dir`/`baseRef` for solo/new-team spawns) → `spawn-actions.ts`.

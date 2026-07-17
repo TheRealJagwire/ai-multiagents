@@ -174,7 +174,7 @@ export function SpawnModal() {
   const validationError = spawnValidationError.value;
 
   // Whether any session this spawn would start runs on Gemini — drives the
-  // plan-mode disable (Claude-only feature) and the missing-key warning.
+  // missing-key warning (Gemini has no login-based fallback).
   const relevantMembers = spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value;
   const anyGemini = modalMode.value === "new"
     ? relevantMembers.some((m) => providerOf(m.model) === "gemini")
@@ -661,25 +661,13 @@ export function SpawnModal() {
           )}
 
         {modalMode.value !== "existing" && (
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              fontSize: 11.5,
-              color: anyGemini ? "var(--sb-text-5)" : "var(--sb-text-3)",
-              cursor: anyGemini ? "not-allowed" : "pointer",
-            }}
-          >
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={!anyGemini && spawnPlanFirst.value}
-              disabled={anyGemini}
+              checked={spawnPlanFirst.value}
               onChange={(e) => setSpawnPlanFirst((e.target as HTMLInputElement).checked)}
             />
-            {anyGemini
-              ? "Start in plan mode — not available for Gemini sessions"
-              : "Start in plan mode — review the plan before it touches anything"}
+            Start in plan mode — review the plan before it touches anything
           </label>
         )}
 

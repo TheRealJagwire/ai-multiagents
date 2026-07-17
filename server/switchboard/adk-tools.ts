@@ -11,6 +11,7 @@ import { z } from "npm:zod@^4.4.3";
 import { join, normalize, resolve } from "jsr:@std/path";
 import { pushFeedEvent, pushSessionPatch, pushTranscriptMessage } from "./mutations.ts";
 import { type ApprovalDecision, getAgentSession, registerPendingApproval, resolvePendingApproval } from "./agent-registry.ts";
+import { recordPlan } from "./turn-report.ts";
 import type { SpawnWorkerResult } from "./agent-sessions.ts";
 
 // Everything a tool needs from its session, handed in by the driver at
@@ -21,6 +22,31 @@ export interface AdkToolContext {
   worktreePath: string;
   currentSignal: () => AbortSignal | undefined;
   onSpawnWorker?: (task: string, name?: string) => Promise<SpawnWorkerResult>;
+  // When true the session starts read-only: mutating tools refuse until the
+  // model calls submit_plan and the user approves it (the ADK equivalent of
+  // Claude's plan mode — see the plan-phase registry below).
+  planFirst?: boolean;
+}
+
+// --- Plan mode -------------------------------------------------------------
+
+// A plan-first session is "planning" until its submitted plan is approved,
+// then "approved". Mutating tools consult this per call, so approval can flip
+// the phase mid-turn and the very next tool call proceeds — no toolset swap.
+// The Claude driver gets plan mode from the SDK; here it's ours to enforce.
+const planPhases = new Map<string, "planning" | "approved">();
+
+export function beginPlanning(sid: string): void {
+  planPhases.set(sid, "planning");
+}
+
+export function clearPlanPhase(sid: string): void {
+  planPhases.delete(sid);
+}
+
+function blockedByPlanning(sid: string): { error: string } | null {
+  if (planPhases.get(sid) !== "planning") return null;
+  return { error: "You're in plan mode — explore read-only, then call submit_plan with your proposed plan. Don't modify anything until it's approved." };
 }
 
 // --- Approval gating -------------------------------------------------------
@@ -197,6 +223,8 @@ export function buildCodingTools(ctx: AdkToolContext): FunctionTool<z.ZodObject<
       content: z.string().describe("The full new content of the file."),
     }),
     execute: async ({ path, content }) => {
+      const blocked = blockedByPlanning(sid);
+      if (blocked) return blocked;
       const target = jail(worktreePath, path);
       if (typeof target !== "string") return target;
       const decision = await gateToolCall(sid, "write_file", `write ${path} (${content.length} chars)`, "The agent wants to write a file.");
@@ -221,6 +249,8 @@ export function buildCodingTools(ctx: AdkToolContext): FunctionTool<z.ZodObject<
       replace_all: z.boolean().optional().describe("Replace every occurrence instead of requiring uniqueness."),
     }),
     execute: async ({ path, old_string, new_string, replace_all }) => {
+      const blocked = blockedByPlanning(sid);
+      if (blocked) return blocked;
       const target = jail(worktreePath, path);
       if (typeof target !== "string") return target;
       const decision = await gateToolCall(sid, "edit_file", `edit ${path}`, "The agent wants to edit a file.");
@@ -249,6 +279,8 @@ export function buildCodingTools(ctx: AdkToolContext): FunctionTool<z.ZodObject<
       timeout_ms: z.number().optional().describe("Kill the command after this many milliseconds (default 120000)."),
     }),
     execute: async ({ command, timeout_ms }) => {
+      const blocked = blockedByPlanning(sid);
+      if (blocked) return blocked;
       const decision = await gateToolCall(sid, "bash", command, "The agent wants to run a shell command.");
       if (!decision.allow) return { error: decision.message };
       // Tie the child to both the turn's abort signal (interrupt/stop kills
@@ -275,6 +307,34 @@ export function buildCodingTools(ctx: AdkToolContext): FunctionTool<z.ZodObject<
 
   const tools = [readFile, listDir, grep, writeFile, editFile, bash];
 
+  if (ctx.planFirst) {
+    tools.push(
+      new FunctionTool({
+        name: "submit_plan",
+        description: "Present your plan to the user for approval before making any changes. While in plan mode the " +
+          "write/edit/bash tools are blocked — research read-only, then call this once with a clear plan. If the user " +
+          "approves you may immediately begin executing; if they reject it, revise and call submit_plan again.",
+        parameters: z.object({
+          plan: z.string().describe("The plan, as markdown. One idea per line or bullet — it's rendered as a checklist."),
+        }),
+        execute: async ({ plan }) => {
+          // Render the plan (same PlanCard/artifact as Claude's ExitPlanMode)
+          // before gating, so the user sees it in the approval prompt.
+          recordPlan(sid, plan);
+          const decision = await gateToolCall(
+            sid,
+            "submit_plan",
+            "Exit plan mode and begin executing",
+            "Review the plan above, then approve to let it start making changes.",
+          );
+          if (!decision.allow) return { error: `${decision.message} Revise the plan and call submit_plan again.` };
+          planPhases.set(sid, "approved");
+          return { ok: true, message: "Plan approved — you may now make changes." };
+        },
+      }),
+    );
+  }
+
   if (ctx.onSpawnWorker) {
     const onSpawnWorker = ctx.onSpawnWorker;
     tools.push(
@@ -287,6 +347,8 @@ export function buildCodingTools(ctx: AdkToolContext): FunctionTool<z.ZodObject<
           name: z.string().optional().describe("A short display name for this worker — how the human sees it in the UI."),
         }),
         execute: async ({ task, name }) => {
+          const blocked = blockedByPlanning(sid);
+          if (blocked) return blocked;
           const decision = await gateToolCall(sid, "spawn_worker", `spawn worker: ${task.slice(0, 120)}`, "The agent wants to spawn a teammate.");
           if (!decision.allow) return { error: decision.message };
           const result = await onSpawnWorker(task, name);

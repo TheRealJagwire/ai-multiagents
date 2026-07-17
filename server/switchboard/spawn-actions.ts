@@ -38,19 +38,8 @@ function startWorktreeAndSession(
   planFirst?: boolean,
 ): void {
   // The model's provider picks the runtime: Claude Agent SDK or Google ADK.
-  // Two Claude-only features degrade for gemini — noted in the transcript
-  // rather than silently dropped, so the user knows why the checkbox they
-  // ticked isn't doing anything.
   const gemini = providerOf(model) === "gemini";
   const spawn = gemini ? spawnAdkSession : spawnAgentSession;
-  if (gemini && planFirst) {
-    pushTranscriptMessage(sid, { k: "note", text: "Plan mode isn't available for Gemini sessions yet — starting normally." });
-    planFirst = false;
-  }
-  if (gemini && mcpConfigIds.length > 0) {
-    pushTranscriptMessage(sid, { k: "note", text: "MCP servers aren't available for Gemini sessions yet — starting without them." });
-    mcpConfigIds = [];
-  }
 
   (async () => {
     if (!useWorktree) {

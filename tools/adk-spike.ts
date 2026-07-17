@@ -8,8 +8,9 @@
 // Kept around so a future @google/adk upgrade can be smoke-checked the
 // same way.
 
-import { FunctionTool, Gemini, InMemorySessionService, isFinalResponse, LlmAgent, Runner } from "npm:@google/adk@^1.3.0";
+import { FunctionTool, Gemini, InMemorySessionService, isFinalResponse, LlmAgent, MCPToolset, Runner } from "npm:@google/adk@^1.3.0";
 import { z } from "npm:zod@^4.4.3";
+import { fromFileUrl } from "jsr:@std/path";
 
 const results: [string, boolean, string][] = [];
 function check(name: string, ok: boolean, detail = ""): void {
@@ -50,6 +51,26 @@ check("LlmAgent + Gemini(model, apiKey) + Runner construct", true);
 const session = await sessionService.createSession({ appName: "spike", userId: "u1" });
 const again = await sessionService.getSession({ appName: "spike", userId: "u1", sessionId: session.id });
 check("InMemorySessionService round-trips a session", again?.id === session.id);
+
+// (h) MCPToolset discovers tools from a child stdio MCP server under Deno.
+// This is the load-bearing unknown for Step 4 (MCP for Gemini): if getTools()
+// can't spawn the child and list its tools here, the whole approach needs a
+// rethink. No Gemini key required — pure MCP client/server plumbing.
+{
+  const serverPath = fromFileUrl(new URL("./adk-spike-mcp-server.ts", import.meta.url));
+  const toolset = new MCPToolset({
+    type: "StdioConnectionParams",
+    serverParams: { command: "deno", args: ["run", "-A", serverPath] },
+  });
+  try {
+    const mcpTools = await toolset.getTools();
+    check("MCPToolset discovers a stdio server's tools under Deno", mcpTools.some((t) => t.name === "ping"), mcpTools.map((t) => t.name).join(", "));
+  } catch (err) {
+    check("MCPToolset discovers a stdio server's tools under Deno", false, String(err));
+  } finally {
+    await toolset.close().catch(() => {});
+  }
+}
 
 if (!apiKey) {
   console.log("\nGEMINI_API_KEY not set — skipping live-turn checks (tool round-trip, history across runners, usage metadata).");
@@ -92,6 +113,40 @@ if (!apiKey) {
     }
   }
   check("recreated Runner preserves history", recallText.toLowerCase().includes("kraken"), JSON.stringify(recallText.slice(0, 80)));
+
+  // (g, live) Does generateContentConfig.thinkingConfig actually take effect,
+  // or is it stripped (the "configure via planner" doc note)? Construct with
+  // it (needs a key — the Gemini ctor throws without one) and run a turn with
+  // thinking DISABLED; if honored, the final event's usageMetadata should
+  // carry no (or zero) thoughtsTokenCount. Reported for a human to eyeball —
+  // ADK may not surface thought tokens at all, so this is informational.
+  try {
+    const thinkingRunner = new Runner({
+      appName: "spike",
+      agent: new LlmAgent({
+        name: "spike_thinking",
+        model: new Gemini({ model: "gemini-2.5-flash", apiKey }),
+        instruction: "Answer in one word.",
+        tools: [],
+        generateContentConfig: { thinkingConfig: { thinkingBudget: 0 } },
+      }),
+      sessionService,
+    });
+    const s2 = await sessionService.createSession({ appName: "spike", userId: "u2" });
+    let usage2: Record<string, unknown> | null = null;
+    for await (
+      const event of thinkingRunner.runAsync({
+        userId: "u2",
+        sessionId: s2.id,
+        newMessage: { role: "user", parts: [{ text: "What is 2+2?" }] },
+      })
+    ) {
+      if (isFinalResponse(event) && event.usageMetadata) usage2 = event.usageMetadata as Record<string, unknown>;
+    }
+    check("thinkingConfig turn completed (inspect usage for thought tokens)", usage2 !== null, JSON.stringify(usage2));
+  } catch (err) {
+    check("thinkingConfig turn completed (inspect usage for thought tokens)", false, String(err));
+  }
 }
 
 const failed = results.filter(([, ok]) => !ok);
