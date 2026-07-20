@@ -1,4 +1,4 @@
-import { computed, signal } from "@preact/signals";
+import { computed, signal, type Signal } from "@preact/signals";
 import type {
   Effort,
   EventKind,
@@ -37,6 +37,14 @@ export interface RailGroup {
   sessions: Session[];
 }
 
+// Every multi-field form lives in one object signal (spawnForm, mcpForm, …)
+// rather than one signal per field — actions patch them via patchForm, and a
+// new field is one interface line instead of a new export threaded through
+// store/actions/components.
+export function patchForm<T>(sig: Signal<T>, patch: Partial<T>): void {
+  sig.value = { ...sig.value, ...patch };
+}
+
 // Raw collections
 export const sessions = signal<Session[]>([]);
 export const teams = signal<Team[]>([]);
@@ -70,7 +78,7 @@ export const activeFilter = signal<ActivityFilter>("all");
 // non-empty selection shows only those kinds. Selection survives reloads —
 // a filter you set up is a working context, not a per-visit whim.
 export const ALL_EVENT_KINDS: EventKind[] = ["info", "message", "artifact", "approval", "error", "review"];
-export const KIND_FILTER_KEY = "switchboard.kindFilter";
+export const KIND_FILTER_KEY = "kraken.kindFilter";
 
 function loadKindFilter(): EventKind[] {
   try {
@@ -119,42 +127,86 @@ export const feedWindowSize = signal(150);
 export const reviewOpen = signal<string | null>(null);
 export const revComment = signal("");
 export const grantsOpen = signal(false);
-export const modalOpen = signal(false);
-export const modalMode = signal<SpawnMode>("solo");
-export const teamName = signal("");
-export const promptText = signal("");
-export const targetTeamId = signal<string | null>(null);
-export const memberModel = signal<Model>("sonnet");
-export const memberEffort = signal<Effort>("medium");
-export const draftMembers = signal<DraftMember[]>([]);
-export const spawnDir = signal("");
-// Optional display name for solo/into-team spawns; "" = auto-generate.
-export const spawnSessionName = signal("");
-// New-team form: optional orchestration board slug ("" = auto-detect).
-export const spawnBoardSlug = signal("");
-export const spawnBaseRef = signal("HEAD");
-export const spawnCreateNew = signal(false);
-export const spawnNoWorktree = signal(false);
-// Opt into Settings › General's default directory instead of typing one.
-export const spawnUseDefaultDir = signal(false);
-export const spawnMcpConfigIds = signal<string[]>([]);
-// datetime-local input value ("" until the user picks a time) — parsed to
-// an epoch ms with `new Date(value).getTime()` at submit time, which
-// interprets it in the browser's local timezone, matching the "local time"
-// the user actually picked.
-export const spawnScheduleEnabled = signal(false);
-export const spawnScheduleAt = signal("");
+
+// --- Spawn modal ---
+
 // "none" = one-shot (the common case). "interval" repeats every N
 // minutes/hours/days from the picked time; "weekly" repeats on the picked
 // local days of week at the picked time's hour:minute.
 export type RecurrenceMode = "none" | "interval" | "weekly";
-export const spawnRecurrenceMode = signal<RecurrenceMode>("none");
-export const spawnRecurrenceEvery = signal(1);
-export const spawnRecurrenceUnit = signal<RecurrenceUnit>("days");
-export const spawnRecurrenceDays = signal<number[]>([]); // 0=Sun..6=Sat
+
+export interface SpawnForm {
+  teamName: string;
+  promptText: string;
+  targetTeamId: string | null;
+  memberModel: Model;
+  memberEffort: Effort;
+  draftMembers: DraftMember[];
+  dir: string;
+  // Optional display name for solo/into-team spawns; "" = auto-generate.
+  sessionName: string;
+  // New-team form: optional orchestration board slug ("" = auto-detect).
+  boardSlug: string;
+  baseRef: string;
+  createNew: boolean;
+  noWorktree: boolean;
+  // Opt into Settings › General's default directory instead of typing one.
+  useDefaultDir: boolean;
+  mcpConfigIds: string[];
+  leadPlans: boolean;
+  autonomousLead: boolean;
+  // Starts the spawned session(s) in Claude's plan-mode: read-only until the
+  // agent proposes a plan and you approve it to start executing (see
+  // recordPlan / ExitPlanMode handling in agent-sessions.ts).
+  planFirst: boolean;
+  // datetime-local input value ("" until the user picks a time) — parsed to
+  // an epoch ms with `new Date(value).getTime()` at submit time, which
+  // interprets it in the browser's local timezone, matching the "local time"
+  // the user actually picked.
+  scheduleEnabled: boolean;
+  scheduleAt: string;
+  recurrenceMode: RecurrenceMode;
+  recurrenceEvery: number;
+  recurrenceUnit: RecurrenceUnit;
+  recurrenceDays: number[]; // 0=Sun..6=Sat
+}
+
+export function initialSpawnForm(): SpawnForm {
+  return {
+    teamName: "",
+    promptText: "",
+    targetTeamId: null,
+    memberModel: "sonnet",
+    memberEffort: "medium",
+    draftMembers: [],
+    dir: "",
+    sessionName: "",
+    boardSlug: "",
+    baseRef: "HEAD",
+    createNew: false,
+    noWorktree: false,
+    useDefaultDir: false,
+    mcpConfigIds: [],
+    leadPlans: false,
+    autonomousLead: false,
+    planFirst: false,
+    scheduleEnabled: false,
+    scheduleAt: "",
+    recurrenceMode: "none",
+    recurrenceEvery: 1,
+    recurrenceUnit: "days",
+    recurrenceDays: [],
+  };
+}
+
+export const modalOpen = signal(false);
+export const modalMode = signal<SpawnMode>("solo");
+export const spawnForm = signal<SpawnForm>(initialSpawnForm());
+export const spawnError = signal<string | null>(null);
+export const spawnSubmitting = signal(false);
 export const dirSuggestions = signal<string[]>([]);
 
-export const RECENT_DIRS_KEY = "switchboard.recentDirs";
+export const RECENT_DIRS_KEY = "kraken.recentDirs";
 export const MAX_RECENT_DIRS = 6;
 
 function loadRecentDirs(): string[] {
@@ -171,16 +223,9 @@ function loadRecentDirs(): string[] {
 // step in spawning — remembering what's been used before (and offering it
 // as one-click chips, see SpawnModal.tsx) cuts that down to a click.
 export const recentDirs = signal<string[]>(loadRecentDirs());
-export const spawnLeadPlans = signal(false);
-export const spawnAutonomousLead = signal(false);
-// Starts the spawned session(s) in Claude's plan-mode: read-only until the
-// agent proposes a plan and you approve it to start executing (see
-// recordPlan / ExitPlanMode handling in agent-sessions.ts).
-export const spawnPlanFirst = signal(false);
-export const spawnError = signal<string | null>(null);
 
 export type ThemeMode = "system" | "light" | "dark";
-export const THEME_KEY = "switchboard.theme";
+export const THEME_KEY = "kraken.theme";
 
 function loadTheme(): ThemeMode {
   const raw = localStorage.getItem(THEME_KEY);
@@ -188,60 +233,102 @@ function loadTheme(): ThemeMode {
 }
 
 export const theme = signal<ThemeMode>(loadTheme());
-export const spawnSubmitting = signal(false);
 
-// MCP config library modal
-export const mcpFormName = signal("");
-export const mcpFormTransport = signal<McpTransport>("stdio");
-export const mcpFormCommand = signal("");
-export const mcpFormArgsText = signal("");
-export const mcpFormEnvText = signal("");
-export const mcpFormUrl = signal("");
-export const mcpFormHeadersText = signal("");
-// Non-null while editing an existing config (its id) — submitMcpConfig
-// branches add-vs-update off this rather than taking a separate parameter.
-export const mcpEditingId = signal<string | null>(null);
+// --- MCP config library (Settings › MCP servers) ---
+
+export interface McpForm {
+  name: string;
+  transport: McpTransport;
+  command: string;
+  argsText: string;
+  envText: string;
+  url: string;
+  headersText: string;
+  // Non-null while editing an existing config (its id) — submitMcpConfig
+  // branches add-vs-update off this rather than taking a separate parameter.
+  editingId: string | null;
+}
+
+export function initialMcpForm(): McpForm {
+  return { name: "", transport: "stdio", command: "", argsText: "", envText: "", url: "", headersText: "", editingId: null };
+}
+
+export const mcpForm = signal<McpForm>(initialMcpForm());
 export const mcpDeleteConfirm = signal<string | null>(null);
 
-// Skills library form (Settings › Skills)
-export const skillFormName = signal("");
-export const skillFormDescription = signal("");
-export const skillFormInstructions = signal("");
-export const skillEditingId = signal<string | null>(null);
+// --- Skills library form (Settings › Skills) ---
+
+export interface SkillForm {
+  name: string;
+  description: string;
+  instructions: string;
+  editingId: string | null;
+}
+
+export function initialSkillForm(): SkillForm {
+  return { name: "", description: "", instructions: "", editingId: null };
+}
+
+export const skillForm = signal<SkillForm>(initialSkillForm());
 export const skillDeleteConfirm = signal<string | null>(null);
 
-// Subagent presets form (Settings › Subagents)
-export const subagentFormName = signal("");
-export const subagentFormDescription = signal("");
-export const subagentFormPrompt = signal("");
-export const subagentFormModel = signal<Model>("sonnet");
-export const subagentFormEffort = signal<Effort>("medium");
-export const subagentEditingId = signal<string | null>(null);
+// --- Subagent presets form (Settings › Subagents) ---
+
+export interface SubagentForm {
+  name: string;
+  description: string;
+  prompt: string;
+  model: Model;
+  effort: Effort;
+  editingId: string | null;
+}
+
+export function initialSubagentForm(): SubagentForm {
+  return { name: "", description: "", prompt: "", model: "sonnet", effort: "medium", editingId: null };
+}
+
+export const subagentForm = signal<SubagentForm>(initialSubagentForm());
 export const subagentDeleteConfirm = signal<string | null>(null);
 
-// Settings modal — opened per-section from the nav rail's individual
-// buttons; null = closed. The API-key draft is write-only: never
-// prefilled from the server.
+// --- Settings modal ---
+
+// Opened per-section from the nav rail's individual buttons; null = closed.
 export type SettingsSection = "general" | "mcp" | "skills" | "subagents";
 export const settingsSection = signal<SettingsSection | null>(null);
-export const apiKeyDraft = signal("");
-export const apiKeySaving = signal(false);
-export const apiKeyError = signal<string | null>(null);
-export const geminiKeyDraft = signal("");
-export const geminiKeySaving = signal(false);
-export const geminiKeyError = signal<string | null>(null);
-export const defaultDirDraft = signal("");
-export const defaultDirSaving = signal(false);
-export const defaultDirError = signal<string | null>(null);
 
-// Scheduled items modal — lists what's pending plus a small form to
-// schedule a message to an already-running session (scheduling a new
-// session/team happens from SpawnModal instead, since it needs that form's
-// full field set).
+// One draft/saving/error triple per saveable setting. The API-key drafts are
+// write-only: never prefilled from the server.
+export interface SettingsDraft {
+  draft: string;
+  saving: boolean;
+  error: string | null;
+}
+
+export function initialSettingsDraft(): SettingsDraft {
+  return { draft: "", saving: false, error: null };
+}
+
+export const apiKeyForm = signal<SettingsDraft>(initialSettingsDraft());
+export const geminiKeyForm = signal<SettingsDraft>(initialSettingsDraft());
+export const defaultDirForm = signal<SettingsDraft>(initialSettingsDraft());
+
+// --- Scheduled items modal ---
+
+// Lists what's pending plus a small form to schedule a message to an
+// already-running session (scheduling a new session/team happens from
+// SpawnModal instead, since it needs that form's full field set).
+export interface ScheduleMsgForm {
+  sessionId: string | null;
+  text: string;
+  at: string;
+}
+
+export function initialScheduleMsgForm(): ScheduleMsgForm {
+  return { sessionId: null, text: "", at: "" };
+}
+
 export const scheduledModalOpen = signal(false);
-export const scheduleMsgSessionId = signal<string | null>(null);
-export const scheduleMsgText = signal("");
-export const scheduleMsgAt = signal("");
+export const scheduleMsgForm = signal<ScheduleMsgForm>(initialScheduleMsgForm());
 export const scheduleDeleteConfirm = signal<string | null>(null);
 export const scheduleError = signal<string | null>(null);
 
@@ -339,14 +426,15 @@ export const statusSummary = computed<string>(() => `${runningCount.value} runni
 // A pending schedule time only applies to "new"/"solo" modes (see
 // SpawnModal) — checked separately so both branches below can share it.
 const scheduleTimeError = computed<string | null>(() => {
-  if (!spawnScheduleEnabled.value) return null;
-  if (!spawnScheduleAt.value) return "Pick a time to schedule for";
-  const runAt = new Date(spawnScheduleAt.value).getTime();
+  const form = spawnForm.value;
+  if (!form.scheduleEnabled) return null;
+  if (!form.scheduleAt) return "Pick a time to schedule for";
+  const runAt = new Date(form.scheduleAt).getTime();
   if (!Number.isFinite(runAt) || runAt <= Date.now()) return "Scheduled time must be in the future";
-  if (spawnRecurrenceMode.value === "interval" && (!Number.isInteger(spawnRecurrenceEvery.value) || spawnRecurrenceEvery.value < 1)) {
+  if (form.recurrenceMode === "interval" && (!Number.isInteger(form.recurrenceEvery) || form.recurrenceEvery < 1)) {
     return "Repeat interval must be at least 1";
   }
-  if (spawnRecurrenceMode.value === "weekly" && spawnRecurrenceDays.value.length === 0) {
+  if (form.recurrenceMode === "weekly" && form.recurrenceDays.length === 0) {
     return "Pick at least one day to repeat on";
   }
   return null;
@@ -356,34 +444,36 @@ const scheduleTimeError = computed<string | null>(() => {
 // here means the failure shows up as disabled-submit-button-with-a-reason
 // instead of a spawned session that immediately errors out.
 function directoryError(): string | null {
+  const form = spawnForm.value;
   const isAbsolute = (path: string) => path.trim().startsWith("/");
-  if (spawnUseDefaultDir.value) {
+  if (form.useDefaultDir) {
     if (!defaultDirectory.value) return "No default directory set — pick one in Settings › General, or enter one here";
     return null;
   }
-  if (!spawnDir.value.trim()) return "Directory is required";
-  if (!isAbsolute(spawnDir.value)) return "Directory must be an absolute path (starting with /)";
+  if (!form.dir.trim()) return "Directory is required";
+  if (!isAbsolute(form.dir)) return "Directory must be an absolute path (starting with /)";
   return null;
 }
 
 export const spawnValidationError = computed<string | null>(() => {
+  const form = spawnForm.value;
   if (modalMode.value === "new") {
-    if (!teamName.value.trim()) return "Team name is required";
-    if (!promptText.value.trim()) return "Team goal is required";
+    if (!form.teamName.trim()) return "Team name is required";
+    if (!form.promptText.trim()) return "Team goal is required";
     const dirError = directoryError();
     if (dirError) return dirError;
-    const relevantMembers = spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value;
+    const relevantMembers = form.leadPlans ? form.draftMembers.slice(0, 1) : form.draftMembers;
     if (relevantMembers.some((m) => !m.task.trim())) return "Every member needs a task";
     return scheduleTimeError.value;
   }
 
   if (modalMode.value === "existing") {
-    if (!promptText.value.trim()) return "Task is required";
-    if (!targetTeamId.value) return "Pick a team";
+    if (!form.promptText.trim()) return "Task is required";
+    if (!form.targetTeamId) return "Pick a team";
     return null;
   }
 
-  if (!promptText.value.trim()) return "Task is required";
+  if (!form.promptText.trim()) return "Task is required";
   const dirError = directoryError();
   if (dirError) return dirError;
   return scheduleTimeError.value;
@@ -398,19 +488,21 @@ export const sortedSchedules = computed<Schedule[]>(() => {
 });
 
 export const scheduleMsgValidationError = computed<string | null>(() => {
-  if (!scheduleMsgSessionId.value) return "Pick a session";
-  if (!scheduleMsgText.value.trim()) return "Message text is required";
-  if (!scheduleMsgAt.value) return "Pick a time to schedule for";
-  const runAt = new Date(scheduleMsgAt.value).getTime();
+  const form = scheduleMsgForm.value;
+  if (!form.sessionId) return "Pick a session";
+  if (!form.text.trim()) return "Message text is required";
+  if (!form.at) return "Pick a time to schedule for";
+  const runAt = new Date(form.at).getTime();
   if (!Number.isFinite(runAt) || runAt <= Date.now()) return "Scheduled time must be in the future";
   return null;
 });
 
 export const mcpFormError = computed<string | null>(() => {
-  if (!mcpFormName.value.trim()) return "Name is required";
-  if (mcpFormTransport.value === "stdio") {
-    if (!mcpFormCommand.value.trim()) return "Command is required for a stdio server";
-  } else if (!mcpFormUrl.value.trim()) {
+  const form = mcpForm.value;
+  if (!form.name.trim()) return "Name is required";
+  if (form.transport === "stdio") {
+    if (!form.command.trim()) return "Command is required for a stdio server";
+  } else if (!form.url.trim()) {
     return "URL is required for an http/sse server";
   }
   return null;

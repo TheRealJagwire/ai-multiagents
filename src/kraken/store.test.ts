@@ -4,25 +4,19 @@ import type { FeedEvent, Session } from "./types.ts";
 import {
   activeFilter,
   defaultDirectory,
-  draftMembers,
   events,
   filteredStream,
   kindFilter,
   lastSeen,
   latestPlanBySession,
   modalMode,
-  promptText,
+  patchForm,
   railGroups,
   searchQuery,
   sessionFilter,
   sessions,
-  spawnDir,
-  spawnLeadPlans,
-  spawnScheduleEnabled,
-  spawnUseDefaultDir,
+  spawnForm,
   spawnValidationError,
-  targetTeamId,
-  teamName,
   teams,
 } from "./store.ts";
 
@@ -190,55 +184,55 @@ describe("latestPlanBySession", () => {
 describe("spawnValidationError", () => {
   beforeEach(() => {
     modalMode.value = "solo";
-    promptText.value = "";
-    teamName.value = "";
-    spawnDir.value = "";
-    targetTeamId.value = null;
-    spawnLeadPlans.value = false;
-    spawnScheduleEnabled.value = false;
-    draftMembers.value = [];
-    spawnUseDefaultDir.value = false;
+    patchForm(spawnForm, { promptText: "" });
+    patchForm(spawnForm, { teamName: "" });
+    patchForm(spawnForm, { dir: "" });
+    patchForm(spawnForm, { targetTeamId: null });
+    patchForm(spawnForm, { leadPlans: false });
+    patchForm(spawnForm, { scheduleEnabled: false });
+    patchForm(spawnForm, { draftMembers: [] });
+    patchForm(spawnForm, { useDefaultDir: false });
     defaultDirectory.value = null;
   });
 
   it("solo: requires task, then an absolute directory", () => {
     assertEquals(spawnValidationError.value, "Task is required");
-    promptText.value = "do the thing";
+    patchForm(spawnForm, { promptText: "do the thing" });
     assertEquals(spawnValidationError.value, "Directory is required");
-    spawnDir.value = "relative/path";
+    patchForm(spawnForm, { dir: "relative/path" });
     assert(spawnValidationError.value!.includes("absolute"));
-    spawnDir.value = "/abs/path";
+    patchForm(spawnForm, { dir: "/abs/path" });
     assertEquals(spawnValidationError.value, null);
   });
 
   it("new team: every member needs a task unless the lead plans", () => {
     modalMode.value = "new";
-    teamName.value = "Alpha";
-    promptText.value = "goal";
-    spawnDir.value = "/abs/repo";
-    draftMembers.value = [
+    patchForm(spawnForm, { teamName: "Alpha" });
+    patchForm(spawnForm, { promptText: "goal" });
+    patchForm(spawnForm, { dir: "/abs/repo" });
+    patchForm(spawnForm, { draftMembers: [
       { task: "lead work", model: "sonnet", effort: "medium", name: "" },
       { task: "", model: "sonnet", effort: "medium", name: "" },
-    ];
+    ] });
     assertEquals(spawnValidationError.value, "Every member needs a task");
 
     // Lead-plans mode only validates the first member.
-    spawnLeadPlans.value = true;
+    patchForm(spawnForm, { leadPlans: true });
     assertEquals(spawnValidationError.value, null);
   });
 
   it("existing team: requires a task and a target team", () => {
     modalMode.value = "existing";
     assertEquals(spawnValidationError.value, "Task is required");
-    promptText.value = "join in";
+    patchForm(spawnForm, { promptText: "join in" });
     assertEquals(spawnValidationError.value, "Pick a team");
-    targetTeamId.value = "tm-1";
+    patchForm(spawnForm, { targetTeamId: "tm-1" });
     assertEquals(spawnValidationError.value, null);
   });
 
   it("opting into the default directory skips the manual directory check", () => {
-    promptText.value = "do the thing";
-    spawnUseDefaultDir.value = true;
+    patchForm(spawnForm, { promptText: "do the thing" });
+    patchForm(spawnForm, { useDefaultDir: true });
     assert(spawnValidationError.value!.includes("No default directory set"));
 
     defaultDirectory.value = "/repo/project";
@@ -247,10 +241,10 @@ describe("spawnValidationError", () => {
 
   it("new team also honors the default-directory opt-in", () => {
     modalMode.value = "new";
-    teamName.value = "Alpha";
-    promptText.value = "goal";
-    draftMembers.value = [{ task: "lead work", model: "sonnet", effort: "medium", name: "" }];
-    spawnUseDefaultDir.value = true;
+    patchForm(spawnForm, { teamName: "Alpha" });
+    patchForm(spawnForm, { promptText: "goal" });
+    patchForm(spawnForm, { draftMembers: [{ task: "lead work", model: "sonnet", effort: "medium", name: "" }] });
+    patchForm(spawnForm, { useDefaultDir: true });
     assert(spawnValidationError.value!.includes("No default directory set"));
 
     defaultDirectory.value = "/repo/project";

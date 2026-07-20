@@ -105,6 +105,7 @@ orchestrationApp.post("/boards", async (c) => {
     leaseMs: typeof body.leaseMs === "number" ? body.leaseMs : undefined,
     heartbeatMs: typeof body.heartbeatMs === "number" ? body.heartbeatMs : undefined,
     eventRetentionMs: typeof body.eventRetentionMs === "number" ? body.eventRetentionMs : undefined,
+    maxInFlightPerAgent: typeof body.maxInFlightPerAgent === "number" ? body.maxInFlightPerAgent : undefined,
   });
   if ("error" in result) return c.text(result.error, 400);
   return c.json(result, 201);
@@ -309,7 +310,7 @@ orchestrationApp.get("/boards/:board/events", async (c) => {
 });
 
 // SSE tail (plan section 6) — no in-process event bus for orchestration
-// (unlike switchboard's bus.ts, since all state here lives in Deno KV, not
+// (unlike kraken's bus.ts, since all state here lives in Deno KV, not
 // in-memory), so this polls listEvents on a short interval starting from
 // "now," pushing anything new. Pull-based delivery is an accepted latency
 // tradeoff per the plan's own risk notes; a human tailing a board isn't the

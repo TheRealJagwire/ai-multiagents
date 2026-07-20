@@ -31,7 +31,10 @@ afterEach(() => {
   kv.close();
 });
 
-async function mustCreateBoard(slug: string, overrides?: { leaseMs?: number; heartbeatMs?: number; eventRetentionMs?: number }) {
+async function mustCreateBoard(
+  slug: string,
+  overrides?: { leaseMs?: number; heartbeatMs?: number; eventRetentionMs?: number; maxInFlightPerAgent?: number },
+) {
   const board = await createBoard(kv, { slug, title: slug, ...overrides });
   if ("error" in board) throw new Error(board.error);
   return board;
@@ -230,6 +233,47 @@ describe("claiming", () => {
     // Exactly one card.claimed event per card, no duplicates from retries leaking through.
     const events = await listEvents(kv, board.id);
     assertEquals(events.filter((e) => e.type === "card.claimed").length, 5);
+  });
+
+  // Fairness (README "claim fairness" gap): by default an agent holds one
+  // in_progress card at a time, so a fast worker can't hoard the ready queue
+  // before slower-starting workers boot.
+  it("refuses a second claim while the agent still holds an in-progress card", async () => {
+    const board = await mustCreateBoard("fairness");
+    const agent = await mustRegister(board.id, "greedy");
+    await createCard(kv, board.id, { title: "One", description: "x" });
+    await createCard(kv, board.id, { title: "Two", description: "x" });
+
+    const first = await claimNextCard(kv, board.id, agent.id);
+    assert(first.ok);
+
+    const second = await claimNextCard(kv, board.id, agent.id);
+    assert(!second.ok);
+    assert(second.message.includes("in-progress card"), `unexpected message: ${second.message}`);
+
+    // claimCard obeys the same cap as claim_next.
+    const remaining = await listCards(kv, board.id, { status: "ready" });
+    const targeted = await claimCard(kv, board.id, agent.id, remaining[0].id);
+    assert(!targeted.ok);
+
+    // Completing the held card frees the slot.
+    await completeCard(kv, board.id, first.card.id, agent.id, "done");
+    const third = await claimNextCard(kv, board.id, agent.id);
+    assert(third.ok);
+  });
+
+  it("honors a per-board maxInFlightPerAgent above the default", async () => {
+    const board = await mustCreateBoard("fairness-2", { maxInFlightPerAgent: 2 });
+    const agent = await mustRegister(board.id, "worker");
+    for (let i = 0; i < 3; i++) {
+      await createCard(kv, board.id, { title: `Card ${i}`, description: "x" });
+    }
+
+    assert((await claimNextCard(kv, board.id, agent.id)).ok);
+    assert((await claimNextCard(kv, board.id, agent.id)).ok);
+    const third = await claimNextCard(kv, board.id, agent.id);
+    assert(!third.ok);
+    assertEquals((await listCards(kv, board.id, { status: "in_progress" })).length, 2);
   });
 
   it("refuses a card whose fileScope overlaps an in-progress card", async () => {

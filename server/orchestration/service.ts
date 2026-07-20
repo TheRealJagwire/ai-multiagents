@@ -20,6 +20,7 @@ import {
   DEFAULT_EVENT_RETENTION_MS,
   DEFAULT_HEARTBEAT_MS,
   DEFAULT_LEASE_MS,
+  DEFAULT_MAX_IN_FLIGHT,
   type EventType,
   type Message,
 } from "./types.ts";
@@ -28,7 +29,15 @@ import {
 
 export async function createBoard(
   kv: Deno.Kv,
-  input: { slug: string; title: string; description?: string; leaseMs?: number; heartbeatMs?: number; eventRetentionMs?: number },
+  input: {
+    slug: string;
+    title: string;
+    description?: string;
+    leaseMs?: number;
+    heartbeatMs?: number;
+    eventRetentionMs?: number;
+    maxInFlightPerAgent?: number;
+  },
 ): Promise<Board | { error: string }> {
   if (!input.slug.trim()) return { error: "slug is required" };
   if (!input.title.trim()) return { error: "title is required" };
@@ -45,6 +54,7 @@ export async function createBoard(
     leaseMs: input.leaseMs,
     heartbeatMs: input.heartbeatMs,
     eventRetentionMs: input.eventRetentionMs,
+    maxInFlightPerAgent: input.maxInFlightPerAgent,
     createdAt: Date.now(),
   };
 
@@ -287,12 +297,28 @@ export type ClaimResult =
 // checks the agent record exists and updates its currentCardId/status in
 // the same atomic transaction, so a card is never claimed by an agent the
 // board doesn't know about, and get_team_status is never stale mid-claim.
-async function tryClaim(kv: Deno.Kv, boardId: string, cardId: string, agentId: string, leaseMs: number): Promise<Card | null> {
+async function tryClaim(
+  kv: Deno.Kv,
+  boardId: string,
+  cardId: string,
+  agentId: string,
+  leaseMs: number,
+  maxInFlight: number,
+): Promise<Card | "at_limit" | null> {
   const [cardEntry, agentEntry] = await Promise.all([
     kv.get<Card>(keys.card(boardId, cardId)),
     kv.get<Agent>(keys.agent(boardId, agentId)),
   ]);
   if (!agentEntry.value || !cardEntry.value || cardEntry.value.status !== "ready") return null;
+
+  // Fairness cap: an agent at its in-flight limit claims nothing more until
+  // it completes or releases. Counted fresh here rather than in the caller,
+  // and made race-safe by .check(agentEntry) below: every claim rewrites the
+  // agent record, so a concurrent claim by the same agent invalidates this
+  // count and the commit fails instead of over-claiming.
+  const holdings = (await listCardsByStatus(kv, boardId, "in_progress"))
+    .filter((c) => c.assignee === agentId).length;
+  if (holdings >= maxInFlight) return "at_limit";
 
   const now = Date.now();
   const updatedCard: Card = {
@@ -324,6 +350,7 @@ export async function claimNextCard(kv: Deno.Kv, boardId: string, agentId: strin
     return { ok: false, message: `unknown agent: ${agentId} (register first)`, nearMisses: [] };
   }
   const leaseMs = board.leaseMs ?? DEFAULT_LEASE_MS;
+  const maxInFlight = board.maxInFlightPerAgent ?? DEFAULT_MAX_IN_FLIGHT;
 
   const readyCards = await listCardsByStatus(kv, boardId, "ready");
   readyCards.sort((a, b) => a.priority - b.priority || a.createdAt - b.createdAt);
@@ -336,7 +363,15 @@ export async function claimNextCard(kv: Deno.Kv, boardId: string, agentId: strin
       nearMisses.push({ cardId: candidate.id, title: candidate.title, reason: "scope_conflict", conflictsWith: conflict.id });
       continue;
     }
-    const claimed = await tryClaim(kv, boardId, candidate.id, agentId, leaseMs);
+    const claimed = await tryClaim(kv, boardId, candidate.id, agentId, leaseMs, maxInFlight);
+    if (claimed === "at_limit") {
+      return {
+        ok: false,
+        message:
+          `agent already holds ${maxInFlight} in-progress card(s) (board max ${maxInFlight}) — complete or release before claiming another`,
+        nearMisses: [],
+      };
+    }
     if (claimed) return { ok: true, card: claimed };
     // Lost the race for this one (claimed by a concurrent caller between
     // our list scan and the attempt) — fall through to the next candidate.
@@ -386,7 +421,16 @@ export async function claimCard(kv: Deno.Kv, boardId: string, agentId: string, c
   }
 
   const leaseMs = board.leaseMs ?? DEFAULT_LEASE_MS;
-  const claimed = await tryClaim(kv, boardId, cardId, agentId, leaseMs);
+  const maxInFlight = board.maxInFlightPerAgent ?? DEFAULT_MAX_IN_FLIGHT;
+  const claimed = await tryClaim(kv, boardId, cardId, agentId, leaseMs, maxInFlight);
+  if (claimed === "at_limit") {
+    return {
+      ok: false,
+      message:
+        `agent already holds ${maxInFlight} in-progress card(s) (board max ${maxInFlight}) — complete or release before claiming another`,
+      nearMisses: [],
+    };
+  }
   if (!claimed) return { ok: false, message: `claim failed: card ${cardId} was claimed by someone else`, nearMisses: [] };
   return { ok: true, card: claimed };
 }

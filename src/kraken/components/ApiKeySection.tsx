@@ -1,17 +1,14 @@
 import type { Signal } from "@preact/signals";
 import {
   apiKeyConfigured,
-  apiKeyDraft,
-  apiKeyError,
-  apiKeySaving,
+  apiKeyForm,
   apiKeyTail,
   geminiKeyConfigured,
-  geminiKeyDraft,
-  geminiKeyError,
-  geminiKeySaving,
+  geminiKeyForm,
   geminiKeyTail,
+  type SettingsDraft,
 } from "../store.ts";
-import { clearApiKey, clearGeminiKey, saveApiKey, saveGeminiKey } from "../actions.ts";
+import { clearApiKey, clearGeminiKey, saveApiKey, saveGeminiKey, setApiKeyDraft, setGeminiKeyDraft } from "../actions.ts";
 
 const inputStyle = {
   border: "1px solid var(--sb-border-3)",
@@ -32,9 +29,8 @@ interface KeyConfig {
   noKeyLine: string;
   configured: Signal<boolean>;
   tail: Signal<string | null>;
-  draft: Signal<string>;
-  saving: Signal<boolean>;
-  error: Signal<string | null>;
+  form: Signal<SettingsDraft>;
+  setDraft: (value: string) => void;
   save: () => Promise<void>;
   clear: () => Promise<void>;
 }
@@ -43,7 +39,7 @@ interface KeyConfig {
 // Settings › General (GeneralSection.tsx).
 function KeyForm({ config }: { config: KeyConfig }) {
   const configured = config.configured.value;
-  const saving = config.saving.value;
+  const { draft, saving, error } = config.form.value;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -58,22 +54,22 @@ function KeyForm({ config }: { config: KeyConfig }) {
         style={{ display: "flex", gap: 8 }}
         onSubmit={(e) => {
           e.preventDefault();
-          if (!saving && config.draft.value.trim()) void config.save();
+          if (!saving && draft.trim()) void config.save();
         }}
       >
         <input
           type="password"
           placeholder={config.placeholder}
           autocomplete="off"
-          value={config.draft.value}
+          value={draft}
           onInput={(e) => {
-            config.draft.value = (e.target as HTMLInputElement).value;
+            config.setDraft((e.target as HTMLInputElement).value);
           }}
           style={inputStyle}
         />
         <button
           type="submit"
-          disabled={saving || !config.draft.value.trim()}
+          disabled={saving || !draft.trim()}
           style={{
             padding: "7px 14px",
             background: "var(--sb-primary)",
@@ -81,15 +77,15 @@ function KeyForm({ config }: { config: KeyConfig }) {
             borderRadius: 8,
             fontSize: 12,
             fontWeight: 600,
-            cursor: saving || !config.draft.value.trim() ? "default" : "pointer",
-            opacity: saving || !config.draft.value.trim() ? 0.5 : 1,
+            cursor: saving || !draft.trim() ? "default" : "pointer",
+            opacity: saving || !draft.trim() ? 0.5 : 1,
           }}
         >
           {configured ? "Replace" : "Save"}
         </button>
       </form>
 
-      {config.error.value && <div style={{ fontSize: 11.5, color: "var(--sb-error-text, #c33)" }}>{config.error.value}</div>}
+      {error && <div style={{ fontSize: 11.5, color: "var(--sb-error-text, #c33)" }}>{error}</div>}
 
       {configured && (
         <button
@@ -128,9 +124,8 @@ export function ApiKeySection() {
         noKeyLine: "No key configured.",
         configured: apiKeyConfigured,
         tail: apiKeyTail,
-        draft: apiKeyDraft,
-        saving: apiKeySaving,
-        error: apiKeyError,
+        form: apiKeyForm,
+        setDraft: setApiKeyDraft,
         save: saveApiKey,
         clear: clearApiKey,
       }}
@@ -150,9 +145,8 @@ export function GeminiKeySection() {
         noKeyLine: "No key configured — Gemini sessions won't start without one.",
         configured: geminiKeyConfigured,
         tail: geminiKeyTail,
-        draft: geminiKeyDraft,
-        saving: geminiKeySaving,
-        error: geminiKeyError,
+        form: geminiKeyForm,
+        setDraft: setGeminiKeyDraft,
         save: saveGeminiKey,
         clear: clearGeminiKey,
       }}

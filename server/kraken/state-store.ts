@@ -1,4 +1,4 @@
-// Persists the rest of switchboard's in-memory state (sessions, teams,
+// Persists the rest of kraken's in-memory state (sessions, teams,
 // feed events, grants, transcripts, MCP configs) to disk so a crash or
 // restart doesn't wipe the visible history — the same reasoning as
 // schedule-store.ts, extended to everything the Snapshot serves. Schedules
@@ -12,17 +12,37 @@
 // branch intact — the work products survive; the process does not.
 
 import { dirname, join } from "jsr:@std/path";
-import type { FeedEvent, Grant, McpConfig, Session, Skill, SubagentPreset, Team, TranscriptMessage } from "../../src/switchboard/types.ts";
+import type { FeedEvent, Grant, McpConfig, Session, Skill, SubagentPreset, Team, TranscriptMessage } from "../../src/kraken/types.ts";
 import { appDataDir } from "./app-data-dir.ts";
 import { idCounter, setIdCounter, state } from "./state.ts";
 
 export const STATE_FILE = join(appDataDir(), "state.json");
 
 // Bounds keep state.json sane for a long-lived app: the feed keeps its
-// newest entries (state.events is newest-first), each transcript its tail.
+// newest entries (state.events is newest-first), each transcript its tail,
+// and ended sessions (with their transcripts) are capped at the newest N —
+// live sessions are never pruned, so nothing running ever disappears.
 const MAX_PERSISTED_EVENTS = 1000;
 const MAX_PERSISTED_TRANSCRIPT = 500;
+const MAX_PERSISTED_ENDED_SESSIONS = 200;
 const PERSIST_DEBOUNCE_MS = 400;
+
+const ENDED_STATUSES = new Set<Session["status"]>(["stopped", "error", "done"]);
+
+// All live sessions plus the newest MAX_PERSISTED_ENDED_SESSIONS ended ones,
+// in state.sessions's own order. This is a persistence bound, not an
+// in-memory prune — the running app keeps everything until restart.
+function boundedSessions(): Session[] {
+  const ended = state.sessions.filter((s) => ENDED_STATUSES.has(s.status));
+  if (ended.length <= MAX_PERSISTED_ENDED_SESSIONS) return state.sessions;
+  const keep = new Set(
+    ended
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, MAX_PERSISTED_ENDED_SESSIONS)
+      .map((s) => s.id),
+  );
+  return state.sessions.filter((s) => !ENDED_STATUSES.has(s.status) || keep.has(s.id));
+}
 
 interface PersistedState {
   counter: number;
@@ -37,13 +57,18 @@ interface PersistedState {
 }
 
 function snapshotForDisk(): PersistedState {
+  const sessions = boundedSessions();
+  const persistedIds = new Set(sessions.map((s) => s.id));
   const transcripts: Record<string, TranscriptMessage[]> = {};
   for (const [sid, messages] of Object.entries(state.transcripts)) {
+    // A transcript without its session is unreachable in the UI — dropping
+    // it here is what actually bounds the file, not just the session list.
+    if (!persistedIds.has(sid)) continue;
     transcripts[sid] = messages.slice(-MAX_PERSISTED_TRANSCRIPT);
   }
   return {
     counter: idCounter(),
-    sessions: state.sessions,
+    sessions,
     teams: state.teams,
     events: state.events.slice(0, MAX_PERSISTED_EVENTS),
     grants: state.grants,

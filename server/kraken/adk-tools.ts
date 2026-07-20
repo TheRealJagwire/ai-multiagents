@@ -44,6 +44,12 @@ export function clearPlanPhase(sid: string): void {
   planPhases.delete(sid);
 }
 
+// The driver consults this at turn end: a plan-first turn that finishes while
+// still "planning" means the model stopped without calling submit_plan.
+export function isPlanning(sid: string): boolean {
+  return planPhases.get(sid) === "planning";
+}
+
 function blockedByPlanning(sid: string): { error: string } | null {
   if (planPhases.get(sid) !== "planning") return null;
   return { error: "You're in plan mode — explore read-only, then call submit_plan with your proposed plan. Don't modify anything until it's approved." };

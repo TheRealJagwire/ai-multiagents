@@ -1,10 +1,10 @@
 import { beforeEach, describe, it } from "jsr:@std/testing/bdd";
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert";
-import type { Session } from "../../src/switchboard/types.ts";
+import type { Session } from "../../src/kraken/types.ts";
 
 // STATE_FILE binds to appDataDir() at import time — override first.
 const dataDir = await Deno.makeTempDir({ prefix: "sb-state-test-" });
-Deno.env.set("SWITCHBOARD_DATA_DIR", dataDir);
+Deno.env.set("KRAKEN_DATA_DIR", dataDir);
 const { initPersistedState, persistStateSoon, STATE_FILE } = await import("./state-store.ts");
 const { state, nextId, setIdCounter } = await import("./state.ts");
 
@@ -32,7 +32,7 @@ function makeSession(id: string, status: Session["status"]): Session {
     pendingMove: null,
     dir: "/tmp/repo",
     worktreePath: null,
-    branch: "switchboard/x",
+    branch: "kraken/x",
     useWorktree: true,
     mcpConfigIds: [],
   };
@@ -97,7 +97,7 @@ describe("state-store", () => {
     assertEquals(state.transcripts["s-1"].at(-1)?.k, "note");
     // Cost/branch/history survive.
     assertEquals(s1.cost, 1.23);
-    assertEquals(s1.branch, "switchboard/x");
+    assertEquals(s1.branch, "kraken/x");
     assertEquals(state.transcripts["s-1"][0], { k: "text", text: "hello" });
     // The already-terminal one is untouched and gets no note.
     assertEquals(s2.status, "done");
@@ -107,6 +107,33 @@ describe("state-store", () => {
     assertEquals(state.grants.length, 1);
     assertEquals(state.skills[0].name, "House style");
     assertEquals(state.subagents[0].effort, "high");
+  });
+
+  it("caps persisted ended sessions at the newest 200 and drops their transcripts", async () => {
+    // 250 stopped sessions (oldest first) + 1 running one; only the newest
+    // 200 stopped survive persistence, the running one always does.
+    state.sessions = Array.from({ length: 250 }, (_, i) => ({
+      ...makeSession(`s-${i}`, "stopped"),
+      startedAt: 1000 + i,
+    }));
+    state.sessions.push({ ...makeSession("s-live", "running"), startedAt: 1 });
+    state.transcripts = Object.fromEntries(
+      state.sessions.map((s) => [s.id, [{ k: "text" as const, text: "hi" }]]),
+    );
+    persistStateSoon();
+    await waitForStateFile();
+
+    resetState();
+    await initPersistedState();
+
+    assertEquals(state.sessions.length, 201);
+    const ids = new Set(state.sessions.map((s) => s.id));
+    assert(ids.has("s-live"), "live session survives regardless of age");
+    assert(ids.has("s-249"), "newest stopped session survives");
+    assert(!ids.has("s-0"), "oldest stopped session is pruned");
+    assert(!ids.has("s-49"), "the 50 oldest stopped sessions are pruned");
+    assertEquals(state.transcripts["s-0"], undefined, "pruned session's transcript goes with it");
+    assertEquals(state.transcripts["s-249"]?.length, 1);
   });
 
   it("idle sessions are live processes — restored as stopped like running ones", async () => {

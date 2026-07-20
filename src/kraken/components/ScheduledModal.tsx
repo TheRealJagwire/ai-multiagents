@@ -1,12 +1,10 @@
 import {
   catchUpMissedSchedules,
   scheduleDeleteConfirm,
-  scheduleError,
-  scheduleMsgAt,
-  scheduleMsgSessionId,
-  scheduleMsgText,
-  scheduleMsgValidationError,
   scheduledModalOpen,
+  scheduleError,
+  scheduleMsgForm,
+  scheduleMsgValidationError,
   sessions,
   sortedSchedules,
 } from "../store.ts";
@@ -16,9 +14,7 @@ import {
   closeScheduledModal,
   confirmDeleteSchedule,
   setCatchUpMissedSchedules,
-  setScheduleMsgAt,
-  setScheduleMsgSessionId,
-  setScheduleMsgText,
+  setScheduleMsgField,
   submitScheduleMessage,
 } from "../actions.ts";
 import { formatLocalDateTime, formatRecurrence, formatWhen } from "../format.ts";
@@ -271,16 +267,16 @@ export function ScheduledModal() {
                       <button
                         type="button"
                         key={session.id}
-                        onClick={() => setScheduleMsgSessionId(session.id)}
+                        onClick={() => setScheduleMsgField({ sessionId: session.id })}
                         style={{
                           fontSize: 11.5,
                           fontWeight: 600,
                           padding: "5px 12px",
                           borderRadius: 9,
                           cursor: "pointer",
-                          background: scheduleMsgSessionId.value === session.id ? "var(--sb-primary)" : "var(--sb-surface)",
-                          color: scheduleMsgSessionId.value === session.id ? "var(--sb-on-primary)" : "var(--sb-text-2)",
-                          border: scheduleMsgSessionId.value === session.id ? "none" : "1px solid var(--sb-border-3)",
+                          background: scheduleMsgForm.value.sessionId === session.id ? "var(--sb-primary)" : "var(--sb-surface)",
+                          color: scheduleMsgForm.value.sessionId === session.id ? "var(--sb-on-primary)" : "var(--sb-text-2)",
+                          border: scheduleMsgForm.value.sessionId === session.id ? "none" : "1px solid var(--sb-border-3)",
                         }}
                       >
                         {session.name}
@@ -292,8 +288,8 @@ export function ScheduledModal() {
                   <div style={labelStyle}>Message</div>
                   <textarea
                     placeholder="What should it be told when this fires?"
-                    value={scheduleMsgText.value}
-                    onInput={(e) => setScheduleMsgText((e.target as HTMLTextAreaElement).value)}
+                    value={scheduleMsgForm.value.text}
+                    onInput={(e) => setScheduleMsgField({ text: (e.target as HTMLTextAreaElement).value })}
                     style={{ ...inputStyle, resize: "none", height: 60, background: "var(--sb-surface)" }}
                   />
                 </div>
@@ -301,8 +297,8 @@ export function ScheduledModal() {
                   <div style={labelStyle}>When (local time)</div>
                   <input
                     type="datetime-local"
-                    value={scheduleMsgAt.value}
-                    onInput={(e) => setScheduleMsgAt((e.target as HTMLInputElement).value)}
+                    value={scheduleMsgForm.value.at}
+                    onInput={(e) => setScheduleMsgField({ at: (e.target as HTMLInputElement).value })}
                     style={{ ...inputStyle, background: "var(--sb-surface)" }}
                   />
                 </div>

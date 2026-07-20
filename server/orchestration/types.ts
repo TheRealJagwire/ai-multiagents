@@ -10,6 +10,7 @@ export interface Board {
   leaseMs?: number; // per-board override of claim lease duration
   heartbeatMs?: number; // per-board override of liveness threshold
   eventRetentionMs?: number; // per-board override of event-log retention
+  maxInFlightPerAgent?: number; // per-board override of how many in_progress cards one agent may hold
   createdAt: number;
   archivedAt?: number; // archived boards are read-only and hidden from lists
 }
@@ -88,3 +89,7 @@ export const DEFAULT_LEASE_MS = 10 * 60_000; // 10 minutes
 // mid-run. 120s * 3 = 6 min still sits comfortably under the 10 min lease.
 export const DEFAULT_HEARTBEAT_MS = 120_000;
 export const DEFAULT_EVENT_RETENTION_MS = 7 * 24 * 60 * 60_000; // 7 days
+// One card at a time matches the worker protocol (claim → work → complete →
+// claim again) and stops a fast-booting worker from hoarding the ready queue
+// before slower workers come online.
+export const DEFAULT_MAX_IN_FLIGHT = 1;

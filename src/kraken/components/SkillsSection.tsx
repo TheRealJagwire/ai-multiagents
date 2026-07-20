@@ -1,16 +1,10 @@
-import {
-  skillDeleteConfirm,
-  skillEditingId,
-  skillFormDescription,
-  skillFormInstructions,
-  skillFormName,
-  skills,
-} from "../store.ts";
+import { skillDeleteConfirm, skillForm, skills } from "../store.ts";
 import {
   askDeleteSkill,
   cancelDeleteSkill,
   cancelEditSkill,
   confirmDeleteSkill,
+  setSkillField,
   startEditSkill,
   submitSkill,
 } from "../actions.ts";
@@ -112,8 +106,8 @@ export function SkillsSection() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700 }}>{skillEditingId.value ? "Edit skill" : "Add a skill"}</div>
-          {skillEditingId.value && (
+          <div style={{ fontSize: 12.5, fontWeight: 700 }}>{skillForm.value.editingId ? "Edit skill" : "Add a skill"}</div>
+          {skillForm.value.editingId && (
             <button type="button" onClick={cancelEditSkill} style={{ fontSize: 11, color: "var(--sb-blue)", cursor: "pointer" }}>
               Cancel edit
             </button>
@@ -123,9 +117,9 @@ export function SkillsSection() {
           <div style={labelStyle}>Name</div>
           <input
             placeholder="e.g. House code style"
-            value={skillFormName.value}
+            value={skillForm.value.name}
             onInput={(e) => {
-              skillFormName.value = (e.target as HTMLInputElement).value;
+              setSkillField({ name: (e.target as HTMLInputElement).value });
             }}
             style={inputStyle}
           />
@@ -134,9 +128,9 @@ export function SkillsSection() {
           <div style={labelStyle}>Description (shown in lists)</div>
           <input
             placeholder="One line on when to use it"
-            value={skillFormDescription.value}
+            value={skillForm.value.description}
             onInput={(e) => {
-              skillFormDescription.value = (e.target as HTMLInputElement).value;
+              setSkillField({ description: (e.target as HTMLInputElement).value });
             }}
             style={inputStyle}
           />
@@ -145,9 +139,9 @@ export function SkillsSection() {
           <div style={labelStyle}>Instructions</div>
           <textarea
             placeholder="The instructions appended to the agent's system prompt when this skill is attached."
-            value={skillFormInstructions.value}
+            value={skillForm.value.instructions}
             onInput={(e) => {
-              skillFormInstructions.value = (e.target as HTMLTextAreaElement).value;
+              setSkillField({ instructions: (e.target as HTMLTextAreaElement).value });
             }}
             style={{ ...inputStyle, resize: "none", height: 90 }}
           />
@@ -155,19 +149,19 @@ export function SkillsSection() {
         <button
           type="button"
           onClick={() => void submitSkill()}
-          disabled={!skillFormName.value.trim()}
+          disabled={!skillForm.value.name.trim()}
           style={{
             alignSelf: "flex-start",
             padding: "7px 16px",
-            background: skillFormName.value.trim() ? "var(--sb-primary)" : "var(--sb-surface-3)",
-            color: skillFormName.value.trim() ? "var(--sb-on-primary)" : "var(--sb-text-5)",
+            background: skillForm.value.name.trim() ? "var(--sb-primary)" : "var(--sb-surface-3)",
+            color: skillForm.value.name.trim() ? "var(--sb-on-primary)" : "var(--sb-text-5)",
             borderRadius: 8,
             fontSize: 12,
             fontWeight: 600,
-            cursor: skillFormName.value.trim() ? "pointer" : "not-allowed",
+            cursor: skillForm.value.name.trim() ? "pointer" : "not-allowed",
           }}
         >
-          {skillEditingId.value ? "Save changes" : "+ Add skill"}
+          {skillForm.value.editingId ? "Save changes" : "+ Add skill"}
         </button>
       </div>
     </div>

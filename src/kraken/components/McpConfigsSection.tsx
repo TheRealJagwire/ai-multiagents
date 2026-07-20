@@ -1,29 +1,11 @@
 import type { McpTransport } from "../types.ts";
-import {
-  mcpConfigs,
-  mcpDeleteConfirm,
-  mcpEditingId,
-  mcpFormArgsText,
-  mcpFormCommand,
-  mcpFormEnvText,
-  mcpFormError,
-  mcpFormHeadersText,
-  mcpFormName,
-  mcpFormTransport,
-  mcpFormUrl,
-} from "../store.ts";
+import { mcpConfigs, mcpDeleteConfirm, mcpForm, mcpFormError } from "../store.ts";
 import {
   askDeleteMcpConfig,
   cancelDeleteMcpConfig,
   cancelEditMcpConfig,
   confirmDeleteMcpConfig,
-  setMcpFormArgsText,
-  setMcpFormCommand,
-  setMcpFormEnvText,
-  setMcpFormHeadersText,
-  setMcpFormName,
-  setMcpFormTransport,
-  setMcpFormUrl,
+  setMcpField,
   startEditMcpConfig,
   submitMcpConfig,
 } from "../actions.ts";
@@ -49,7 +31,7 @@ const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--sb-text-3)" };
 // (formerly its own McpConfigsModal — same list + add/edit form, no
 // overlay of its own).
 export function McpConfigsSection() {
-  const transport = mcpFormTransport.value;
+  const transport = mcpForm.value.transport;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -189,8 +171,8 @@ export function McpConfigsSection() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700 }}>{mcpEditingId.value ? "Edit server" : "Add a server"}</div>
-          {mcpEditingId.value && (
+          <div style={{ fontSize: 12.5, fontWeight: 700 }}>{mcpForm.value.editingId ? "Edit server" : "Add a server"}</div>
+          {mcpForm.value.editingId && (
             <button
               type="button"
               onClick={cancelEditMcpConfig}
@@ -206,8 +188,8 @@ export function McpConfigsSection() {
             <div style={labelStyle}>Name</div>
             <input
               placeholder="e.g. filesystem"
-              value={mcpFormName.value}
-              onInput={(e) => setMcpFormName((e.target as HTMLInputElement).value)}
+              value={mcpForm.value.name}
+              onInput={(e) => setMcpField({ name: (e.target as HTMLInputElement).value })}
               style={{ ...inputStyle, background: "var(--sb-surface)" }}
             />
           </div>
@@ -218,7 +200,7 @@ export function McpConfigsSection() {
                 <button
                   type="button"
                   key={t}
-                  onClick={() => setMcpFormTransport(t)}
+                  onClick={() => setMcpField({ transport: t })}
                   style={chipStyle(chipState(transport === t, false))}
                 >
                   {t}
@@ -235,8 +217,8 @@ export function McpConfigsSection() {
                 <div style={labelStyle}>Command</div>
                 <input
                   placeholder="npx"
-                  value={mcpFormCommand.value}
-                  onInput={(e) => setMcpFormCommand((e.target as HTMLInputElement).value)}
+                  value={mcpForm.value.command}
+                  onInput={(e) => setMcpField({ command: (e.target as HTMLInputElement).value })}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)" }}
                 />
               </div>
@@ -244,8 +226,8 @@ export function McpConfigsSection() {
                 <div style={labelStyle}>Args (space-separated)</div>
                 <input
                   placeholder="-y @modelcontextprotocol/server-filesystem /path"
-                  value={mcpFormArgsText.value}
-                  onInput={(e) => setMcpFormArgsText((e.target as HTMLInputElement).value)}
+                  value={mcpForm.value.argsText}
+                  onInput={(e) => setMcpField({ argsText: (e.target as HTMLInputElement).value })}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)" }}
                 />
               </div>
@@ -253,8 +235,8 @@ export function McpConfigsSection() {
                 <div style={labelStyle}>Env (one KEY=VALUE per line)</div>
                 <textarea
                   placeholder="API_KEY=..."
-                  value={mcpFormEnvText.value}
-                  onInput={(e) => setMcpFormEnvText((e.target as HTMLTextAreaElement).value)}
+                  value={mcpForm.value.envText}
+                  onInput={(e) => setMcpField({ envText: (e.target as HTMLTextAreaElement).value })}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)", resize: "none", height: 50 }}
                 />
               </div>
@@ -266,8 +248,8 @@ export function McpConfigsSection() {
                 <div style={labelStyle}>URL</div>
                 <input
                   placeholder="https://example.com/mcp"
-                  value={mcpFormUrl.value}
-                  onInput={(e) => setMcpFormUrl((e.target as HTMLInputElement).value)}
+                  value={mcpForm.value.url}
+                  onInput={(e) => setMcpField({ url: (e.target as HTMLInputElement).value })}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)" }}
                 />
               </div>
@@ -275,8 +257,8 @@ export function McpConfigsSection() {
                 <div style={labelStyle}>Headers (one KEY=VALUE per line)</div>
                 <textarea
                   placeholder="Authorization=Bearer ..."
-                  value={mcpFormHeadersText.value}
-                  onInput={(e) => setMcpFormHeadersText((e.target as HTMLTextAreaElement).value)}
+                  value={mcpForm.value.headersText}
+                  onInput={(e) => setMcpField({ headersText: (e.target as HTMLTextAreaElement).value })}
                   style={{ ...monoInputStyle, background: "var(--sb-surface)", resize: "none", height: 50 }}
                 />
               </div>
@@ -298,7 +280,7 @@ export function McpConfigsSection() {
               cursor: mcpFormError.value ? "not-allowed" : "pointer",
             }}
           >
-            {mcpEditingId.value ? "Save changes" : "+ Add server"}
+            {mcpForm.value.editingId ? "Save changes" : "+ Add server"}
           </button>
           {mcpFormError.value && <span style={{ fontSize: 11, color: "var(--sb-text-5)" }}>{mcpFormError.value}</span>}
         </div>

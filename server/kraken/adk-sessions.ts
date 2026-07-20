@@ -11,13 +11,13 @@
 // the next turn simply builds its runner around the new model.
 
 import { type BaseTool, Gemini, InMemorySessionService, LlmAgent, Runner } from "npm:@google/adk@^1.3.0";
-import type { Effort, Model } from "../../src/switchboard/types.ts";
+import type { Effort, Model } from "../../src/kraken/types.ts";
 import { pushFeedEvent, pushSessionPatch, pushTranscriptMessage } from "./mutations.ts";
 import { registerAgentSession } from "./agent-registry.ts";
 import { state } from "./state.ts";
 import { AsyncQueue } from "./async-queue.ts";
 import { beginAssistantMessage, checkForSpecPlan, collectTurnText, flushTurnSummary } from "./turn-report.ts";
-import { beginPlanning, buildCodingTools, clearPlanPhase, settlePendingGates } from "./adk-tools.ts";
+import { beginPlanning, buildCodingTools, clearPlanPhase, isPlanning, settlePendingGates } from "./adk-tools.ts";
 import { buildMcpToolsets } from "./adk-mcp.ts";
 import { WORKER_SYSTEM_PROMPT, type SpawnOptions } from "./agent-sessions.ts";
 import { getGeminiApiKey } from "./gemini-key-actions.ts";
@@ -41,6 +41,14 @@ const GEMINI_PRICES: Partial<Record<Model, { input: number; output: number }>> =
 };
 
 const GEMINI_CONTEXT_WINDOW = 1_000_000;
+
+// Live-observed quirk (2026-07-17): a plan-first Gemini session sometimes
+// ends its turn after a single read-only call without ever calling
+// submit_plan, and sits idle until a human types "Continue". Bounded so a
+// model that genuinely won't produce a plan ends up idle (with the stall
+// visible in its transcript) instead of ping-ponging forever.
+const MAX_PLAN_NUDGES = 3;
+const PLAN_NUDGE_MESSAGE = "Continue: finish exploring, then call submit_plan with your proposed plan.";
 
 // Effort → Gemini thinking budget (tokens): low disables thinking, medium
 // lets the model decide, high gives it a large budget. Set once at spawn
@@ -69,7 +77,7 @@ interface TurnTracker {
   cost: number;
 }
 
-// Translates one ADK event into Switchboard state mutations. Exported for
+// Translates one ADK event into Kraken state mutations. Exported for
 // tests — like agent-sessions.ts's handleMessage, this is pure state logic
 // that must not require a live model to verify.
 export function translateAdkEvent(sid: string, event: unknown, model: Model, tracker: TurnTracker): void {
@@ -127,7 +135,7 @@ export async function spawnAdkSession(sid: string, task: string, opts: SpawnOpti
 
   const queue = new AsyncQueue<string>();
   const sessionService = new InMemorySessionService();
-  const adkSession = await sessionService.createSession({ appName: "switchboard", userId: sid });
+  const adkSession = await sessionService.createSession({ appName: "kraken", userId: sid });
 
   let model: Model = opts.model;
   let current: AbortController | null = null;
@@ -166,6 +174,7 @@ export async function spawnAdkSession(sid: string, task: string, opts: SpawnOpti
   if (opts.planFirst) beginPlanning(sid);
 
   const tracker: TurnTracker = { cost: 0 };
+  let planNudges = 0;
   const tools: BaseTool[] = buildCodingTools({
     sid,
     worktreePath: opts.worktreePath,
@@ -198,9 +207,9 @@ export async function spawnAdkSession(sid: string, task: string, opts: SpawnOpti
 
     try {
       const runner = new Runner({
-        appName: "switchboard",
+        appName: "kraken",
         agent: new LlmAgent({
-          name: "switchboard_worker",
+          name: "kraken_worker",
           model: new Gemini({ model: GEMINI_MODEL_IDS[model] ?? GEMINI_MODEL_FALLBACK, apiKey }),
           instruction,
           tools,
@@ -225,7 +234,19 @@ export async function spawnAdkSession(sid: string, task: string, opts: SpawnOpti
         if (tracker.cost > 0) pushSessionPatch(sid, { cost: tracker.cost });
         flushTurnSummary(sid);
         checkForSpecPlan(sid).catch(() => {});
-        idleTransition(sid, "Idle — ready for the next message");
+        // A plan-first turn that ended while still "planning" means the model
+        // stopped without submitting a plan — nudge it instead of idling, the
+        // same "Continue" a human would otherwise have to type.
+        if (opts.planFirst && isPlanning(sid) && planNudges < MAX_PLAN_NUDGES) {
+          planNudges++;
+          pushTranscriptMessage(sid, {
+            k: "note",
+            text: `Plan mode stalled without a submitted plan — auto-nudging to continue (${planNudges}/${MAX_PLAN_NUDGES}).`,
+          });
+          queue.push(PLAN_NUDGE_MESSAGE);
+        } else {
+          idleTransition(sid, "Idle — ready for the next message");
+        }
       }
     } catch (err) {
       if (!signal.aborted) {

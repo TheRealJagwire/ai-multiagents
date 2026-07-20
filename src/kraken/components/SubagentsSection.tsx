@@ -1,19 +1,11 @@
 import type { Effort } from "../types.ts";
-import {
-  subagentDeleteConfirm,
-  subagentEditingId,
-  subagentFormDescription,
-  subagentFormEffort,
-  subagentFormModel,
-  subagentFormName,
-  subagentFormPrompt,
-  subagents,
-} from "../store.ts";
+import { subagentDeleteConfirm, subagentForm, subagents } from "../store.ts";
 import {
   askDeleteSubagent,
   cancelDeleteSubagent,
   cancelEditSubagent,
   confirmDeleteSubagent,
+  setSubagentField,
   startEditSubagent,
   submitSubagent,
 } from "../actions.ts";
@@ -136,9 +128,9 @@ export function SubagentsSection() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700 }}>
-            {subagentEditingId.value ? "Edit subagent" : "Add a subagent"}
+            {subagentForm.value.editingId ? "Edit subagent" : "Add a subagent"}
           </div>
-          {subagentEditingId.value && (
+          {subagentForm.value.editingId && (
             <button type="button" onClick={cancelEditSubagent} style={{ fontSize: 11, color: "var(--sb-blue)", cursor: "pointer" }}>
               Cancel edit
             </button>
@@ -149,9 +141,9 @@ export function SubagentsSection() {
             <div style={labelStyle}>Name</div>
             <input
               placeholder="e.g. Reviewer"
-              value={subagentFormName.value}
+              value={subagentForm.value.name}
               onInput={(e) => {
-                subagentFormName.value = (e.target as HTMLInputElement).value;
+                setSubagentField({ name: (e.target as HTMLInputElement).value });
               }}
               style={inputStyle}
             />
@@ -160,9 +152,9 @@ export function SubagentsSection() {
             <div style={labelStyle}>Description</div>
             <input
               placeholder="One line on what this agent is for"
-              value={subagentFormDescription.value}
+              value={subagentForm.value.description}
               onInput={(e) => {
-                subagentFormDescription.value = (e.target as HTMLInputElement).value;
+                setSubagentField({ description: (e.target as HTMLInputElement).value });
               }}
               style={inputStyle}
             />
@@ -172,9 +164,9 @@ export function SubagentsSection() {
           <div style={labelStyle}>System prompt</div>
           <textarea
             placeholder="Replaces the default worker system prompt for sessions spawned as this subagent."
-            value={subagentFormPrompt.value}
+            value={subagentForm.value.prompt}
             onInput={(e) => {
-              subagentFormPrompt.value = (e.target as HTMLTextAreaElement).value;
+              setSubagentField({ prompt: (e.target as HTMLTextAreaElement).value });
             }}
             style={{ ...inputStyle, resize: "none", height: 90 }}
           />
@@ -182,7 +174,7 @@ export function SubagentsSection() {
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}>MODEL</span>
-            <ModelSelect value={subagentFormModel.value} onChange={(m) => (subagentFormModel.value = m)} />
+            <ModelSelect value={subagentForm.value.model} onChange={(m) => setSubagentField({ model: m })} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", color: "var(--sb-text-5)", marginRight: 3 }}>EFFORT</span>
@@ -190,10 +182,8 @@ export function SubagentsSection() {
               <button
                 type="button"
                 key={e}
-                onClick={() => {
-                  subagentFormEffort.value = e;
-                }}
-                style={chipStyle(chipState(subagentFormEffort.value === e, false))}
+                onClick={() => setSubagentField({ effort: e })}
+                style={chipStyle(chipState(subagentForm.value.effort === e, false))}
               >
                 {effortLabel(e)}
               </button>
@@ -203,19 +193,19 @@ export function SubagentsSection() {
         <button
           type="button"
           onClick={() => void submitSubagent()}
-          disabled={!subagentFormName.value.trim()}
+          disabled={!subagentForm.value.name.trim()}
           style={{
             alignSelf: "flex-start",
             padding: "7px 16px",
-            background: subagentFormName.value.trim() ? "var(--sb-primary)" : "var(--sb-surface-3)",
-            color: subagentFormName.value.trim() ? "var(--sb-on-primary)" : "var(--sb-text-5)",
+            background: subagentForm.value.name.trim() ? "var(--sb-primary)" : "var(--sb-surface-3)",
+            color: subagentForm.value.name.trim() ? "var(--sb-on-primary)" : "var(--sb-text-5)",
             borderRadius: 8,
             fontSize: 12,
             fontWeight: 600,
-            cursor: subagentFormName.value.trim() ? "pointer" : "not-allowed",
+            cursor: subagentForm.value.name.trim() ? "pointer" : "not-allowed",
           }}
         >
-          {subagentEditingId.value ? "Save changes" : "+ Add subagent"}
+          {subagentForm.value.editingId ? "Save changes" : "+ Add subagent"}
         </button>
       </div>
     </div>

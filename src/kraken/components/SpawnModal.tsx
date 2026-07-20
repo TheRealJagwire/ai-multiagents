@@ -2,39 +2,17 @@ import type { Effort, RecurrenceUnit } from "../types.ts";
 import {
   defaultDirectory,
   dirSuggestions,
-  draftMembers,
   geminiKeyConfigured,
   mcpConfigs,
-  memberEffort,
-  memberModel,
   modalMode,
   modalOpen,
-  promptText,
   type RecurrenceMode,
   recentDirs,
-  spawnAutonomousLead,
-  spawnBaseRef,
-  spawnBoardSlug,
-  spawnCreateNew,
-  spawnDir,
-  spawnSessionName,
   spawnError,
-  spawnLeadPlans,
-  spawnMcpConfigIds,
+  spawnForm,
   type SpawnMode,
-  spawnNoWorktree,
-  spawnPlanFirst,
-  spawnRecurrenceDays,
-  spawnUseDefaultDir,
-  spawnRecurrenceEvery,
-  spawnRecurrenceMode,
-  spawnRecurrenceUnit,
-  spawnScheduleAt,
-  spawnScheduleEnabled,
   spawnSubmitting,
   spawnValidationError,
-  targetTeamId,
-  teamName,
   teams,
 } from "../store.ts";
 import {
@@ -43,27 +21,11 @@ import {
   pickSpawnDir,
   removeDraftMember,
   setDraftMember,
-  setMemberEffort,
-  setMemberModel,
   setModalMode,
-  setPromptText,
-  setSpawnAutonomousLead,
-  setSpawnBaseRef,
-  setSpawnBoardSlug,
-  setSpawnCreateNew,
   setSpawnDir,
-  setSpawnSessionName,
+  setSpawnField,
   setSpawnLeadPlans,
   setSpawnNoWorktree,
-  setSpawnPlanFirst,
-  setSpawnRecurrenceEvery,
-  setSpawnUseDefaultDir,
-  setSpawnRecurrenceMode,
-  setSpawnRecurrenceUnit,
-  setSpawnScheduleAt,
-  setSpawnScheduleEnabled,
-  setTargetTeamId,
-  setTeamName,
   submitSpawn,
   toggleSpawnMcpConfig,
   toggleSpawnRecurrenceDay,
@@ -139,7 +101,7 @@ function McpConfigChecklist() {
             type="button"
             key={config.id}
             onClick={() => toggleSpawnMcpConfig(config.id)}
-            style={chipStyle(chipState(spawnMcpConfigIds.value.includes(config.id), false))}
+            style={chipStyle(chipState(spawnForm.value.mcpConfigIds.includes(config.id), false))}
           >
             {config.name}
           </button>
@@ -164,7 +126,7 @@ export function SpawnModal() {
     ? "Add agent to a team"
     : "New session";
 
-  const spawnLabel = spawnScheduleEnabled.value
+  const spawnLabel = spawnForm.value.scheduleEnabled
     ? "Schedule"
     : modalMode.value === "new"
     ? "Start team"
@@ -175,10 +137,10 @@ export function SpawnModal() {
 
   // Whether any session this spawn would start runs on Gemini — drives the
   // missing-key warning (Gemini has no login-based fallback).
-  const relevantMembers = spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value;
+  const relevantMembers = spawnForm.value.leadPlans ? spawnForm.value.draftMembers.slice(0, 1) : spawnForm.value.draftMembers;
   const anyGemini = modalMode.value === "new"
     ? relevantMembers.some((m) => providerOf(m.model) === "gemini")
-    : providerOf(memberModel.value) === "gemini";
+    : providerOf(spawnForm.value.memberModel) === "gemini";
 
   return (
     <div
@@ -243,8 +205,8 @@ export function SpawnModal() {
                 <div style={labelStyle}>Team name</div>
                 <input
                   placeholder="e.g. Onboarding revamp"
-                  value={teamName.value}
-                  onInput={(e) => setTeamName((e.target as HTMLInputElement).value)}
+                  value={spawnForm.value.teamName}
+                  onInput={(e) => setSpawnField({ teamName: (e.target as HTMLInputElement).value })}
                   style={inputStyle}
                 />
               </div>
@@ -252,8 +214,8 @@ export function SpawnModal() {
                 <div style={labelStyle}>Team goal</div>
                 <textarea
                   placeholder="What should this team accomplish?"
-                  value={promptText.value}
-                  onInput={(e) => setPromptText((e.target as HTMLTextAreaElement).value)}
+                  value={spawnForm.value.promptText}
+                  onInput={(e) => setSpawnField({ promptText: (e.target as HTMLTextAreaElement).value })}
                   style={{ ...inputStyle, resize: "none", height: 54 }}
                 />
               </div>
@@ -261,8 +223,8 @@ export function SpawnModal() {
                 <div style={labelStyle}>Kanban board slug (optional — auto-detected from the repo's .mcp.json)</div>
                 <input
                   placeholder="e.g. ai-multiagents"
-                  value={spawnBoardSlug.value}
-                  onInput={(e) => setSpawnBoardSlug((e.target as HTMLInputElement).value)}
+                  value={spawnForm.value.boardSlug}
+                  onInput={(e) => setSpawnField({ boardSlug: (e.target as HTMLInputElement).value })}
                   style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
                 />
               </div>
@@ -270,30 +232,30 @@ export function SpawnModal() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2 }}>
                   <div style={labelStyle}>Directory</div>
                   <input
-                    placeholder={spawnNoWorktree.value
+                    placeholder={spawnForm.value.noWorktree
                       ? "/absolute/path/to/folder"
-                      : spawnCreateNew.value
+                      : spawnForm.value.createNew
                       ? "/absolute/path/to/new-repo"
                       : "/absolute/path/to/repo"}
-                    value={spawnUseDefaultDir.value ? (defaultDirectory.value ?? "") : spawnDir.value}
-                    disabled={spawnUseDefaultDir.value}
+                    value={spawnForm.value.useDefaultDir ? (defaultDirectory.value ?? "") : spawnForm.value.dir}
+                    disabled={spawnForm.value.useDefaultDir}
                     onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
-                    style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)", opacity: spawnUseDefaultDir.value ? 0.6 : 1 }}
+                    style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)", opacity: spawnForm.value.useDefaultDir ? 0.6 : 1 }}
                   />
                 </div>
-                {!spawnCreateNew.value && !spawnNoWorktree.value && (
+                {!spawnForm.value.createNew && !spawnForm.value.noWorktree && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
                     <div style={labelStyle}>Base ref</div>
                     <input
                       placeholder="HEAD"
-                      value={spawnBaseRef.value}
-                      onInput={(e) => setSpawnBaseRef((e.target as HTMLInputElement).value)}
+                      value={spawnForm.value.baseRef}
+                      onInput={(e) => setSpawnField({ baseRef: (e.target as HTMLInputElement).value })}
                       style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
                     />
                   </div>
                 )}
               </div>
-              {!spawnUseDefaultDir.value && <DirectorySuggestions />}
+              {!spawnForm.value.useDefaultDir && <DirectorySuggestions />}
               <label
                 style={{
                   display: "flex",
@@ -306,9 +268,9 @@ export function SpawnModal() {
               >
                 <input
                   type="checkbox"
-                  checked={spawnUseDefaultDir.value}
+                  checked={spawnForm.value.useDefaultDir}
                   disabled={!defaultDirectory.value}
-                  onChange={(e) => setSpawnUseDefaultDir((e.target as HTMLInputElement).checked)}
+                  onChange={(e) => setSpawnField({ useDefaultDir: (e.target as HTMLInputElement).checked })}
                 />
                 {defaultDirectory.value
                   ? `Use default directory (${defaultDirectory.value})`
@@ -317,23 +279,23 @@ export function SpawnModal() {
               <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  checked={spawnNoWorktree.value}
+                  checked={spawnForm.value.noWorktree}
                   onChange={(e) => setSpawnNoWorktree((e.target as HTMLInputElement).checked)}
                 />
                 Skip git — run directly in this folder (no repo required, no worktrees)
               </label>
-              {!spawnNoWorktree.value && (
+              {!spawnForm.value.noWorktree && (
                 <>
                   <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
                     <input
                       type="checkbox"
-                      checked={spawnCreateNew.value}
-                      onChange={(e) => setSpawnCreateNew((e.target as HTMLInputElement).checked)}
+                      checked={spawnForm.value.createNew}
+                      onChange={(e) => setSpawnField({ createNew: (e.target as HTMLInputElement).checked })}
                     />
                     Create this as a new repo (empty directory, git init, initial commit)
                   </label>
                   <div style={{ fontSize: 11, color: "var(--sb-text-4)" }}>
-                    {spawnCreateNew.value
+                    {spawnForm.value.createNew
                       ? "The directory is created fresh, initialized as a git repo with a first commit — then each member gets its own worktree off it."
                       : "Each member gets its own git worktree branched from this ref — they can work concurrently without stepping on each other's changes."}
                   </div>
@@ -341,7 +303,7 @@ export function SpawnModal() {
               )}
               <McpConfigChecklist />
 
-              {spawnNoWorktree.value && (
+              {spawnForm.value.noWorktree && (
                 <div style={{ fontSize: 11, color: "var(--sb-text-4)" }}>
                   Every member runs directly in this folder, sharing it — no branch isolation, so members can step
                   on each other's changes. Team planning and worker auto-spawning need worktrees, so they're
@@ -349,18 +311,18 @@ export function SpawnModal() {
                 </div>
               )}
 
-              {!spawnNoWorktree.value && (
+              {!spawnForm.value.noWorktree && (
                 <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
                   <input
                     type="checkbox"
-                    checked={spawnLeadPlans.value}
+                    checked={spawnForm.value.leadPlans}
                     onChange={(e) => setSpawnLeadPlans((e.target as HTMLInputElement).checked)}
                   />
                   Let the lead plan the team
                 </label>
               )}
 
-              {!spawnNoWorktree.value && spawnLeadPlans.value && (
+              {!spawnForm.value.noWorktree && spawnForm.value.leadPlans && (
                 <>
                   <label
                     style={{
@@ -375,22 +337,22 @@ export function SpawnModal() {
                   >
                     <input
                       type="checkbox"
-                      checked={spawnAutonomousLead.value}
-                      onChange={(e) => setSpawnAutonomousLead((e.target as HTMLInputElement).checked)}
+                      checked={spawnForm.value.autonomousLead}
+                      onChange={(e) => setSpawnField({ autonomousLead: (e.target as HTMLInputElement).checked })}
                     />
                     Let the lead spawn workers itself
                   </label>
                   <div style={{ fontSize: 11, color: "var(--sb-text-4)", marginLeft: 20 }}>
-                    {spawnAutonomousLead.value
+                    {spawnForm.value.autonomousLead
                       ? "The lead gets a spawn_worker tool and creates teammates on its own as it decides it needs them, up to 8."
-                      : "The lead writes a plan (SWITCHBOARD_TASKS.md) and stops. You'll review it, then click \"Start workers\" on the team card to spawn the rest of the team from that plan."}
+                      : "The lead writes a plan (KRAKEN_TASKS.md) and stops. You'll review it, then click \"Start workers\" on the team card to spawn the rest of the team from that plan."}
                   </div>
                 </>
               )}
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={labelStyle}>{spawnLeadPlans.value ? "Lead's task" : "Members"}</div>
-                {(spawnLeadPlans.value ? draftMembers.value.slice(0, 1) : draftMembers.value).map((member, i) => (
+                <div style={labelStyle}>{spawnForm.value.leadPlans ? "Lead's task" : "Members"}</div>
+                {(spawnForm.value.leadPlans ? spawnForm.value.draftMembers.slice(0, 1) : spawnForm.value.draftMembers).map((member, i) => (
                   <div
                     key={i}
                     style={{
@@ -404,7 +366,7 @@ export function SpawnModal() {
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {!spawnLeadPlans.value && (
+                      {!spawnForm.value.leadPlans && (
                         <span
                           style={{
                             fontSize: 10,
@@ -432,7 +394,7 @@ export function SpawnModal() {
                         onInput={(e) => setDraftMember(i, { task: (e.target as HTMLInputElement).value })}
                         style={{ ...inputStyle, flex: 1, padding: "6px 10px", fontSize: 12, background: "var(--sb-surface)" }}
                       />
-                      {!spawnLeadPlans.value && draftMembers.value.length > 1 && (
+                      {!spawnForm.value.leadPlans && spawnForm.value.draftMembers.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeDraftMember(i)}
@@ -468,7 +430,7 @@ export function SpawnModal() {
                     </div>
                   </div>
                 ))}
-                {!spawnLeadPlans.value && (
+                {!spawnForm.value.leadPlans && (
                   <button
                     type="button"
                     onClick={addDraftMember}
@@ -486,8 +448,8 @@ export function SpawnModal() {
                 <div style={labelStyle}>Name (optional — auto-generated if blank)</div>
                 <input
                   placeholder="e.g. Onboarding audit"
-                  value={spawnSessionName.value}
-                  onInput={(e) => setSpawnSessionName((e.target as HTMLInputElement).value)}
+                  value={spawnForm.value.sessionName}
+                  onInput={(e) => setSpawnField({ sessionName: (e.target as HTMLInputElement).value })}
                   style={inputStyle}
                 />
               </div>
@@ -495,8 +457,8 @@ export function SpawnModal() {
                 <div style={labelStyle}>What should this agent do?</div>
                 <textarea
                   placeholder="e.g. Audit our onboarding emails and draft improvements"
-                  value={promptText.value}
-                  onInput={(e) => setPromptText((e.target as HTMLTextAreaElement).value)}
+                  value={spawnForm.value.promptText}
+                  onInput={(e) => setSpawnField({ promptText: (e.target as HTMLTextAreaElement).value })}
                   style={{ ...inputStyle, resize: "none", height: 74 }}
                 />
               </div>
@@ -509,8 +471,8 @@ export function SpawnModal() {
                         <button
                           type="button"
                           key={team.id}
-                          onClick={() => setTargetTeamId(team.id)}
-                          style={{ ...chipStyle(chipState(targetTeamId.value === team.id, false)), fontSize: 11.5, padding: "5px 12px" }}
+                          onClick={() => setSpawnField({ targetTeamId: team.id })}
+                          style={{ ...chipStyle(chipState(spawnForm.value.targetTeamId === team.id, false)), fontSize: 11.5, padding: "5px 12px" }}
                         >
                           {team.name}
                         </button>
@@ -520,14 +482,14 @@ export function SpawnModal() {
                   <div style={{ fontSize: 11, color: "var(--sb-text-4)" }}>
                     Working in:{" "}
                     <span style={{ fontFamily: "var(--sb-font-mono)" }}>
-                      {teams.value.find((t) => t.id === targetTeamId.value)?.dir ?? "—"}
+                      {teams.value.find((t) => t.id === spawnForm.value.targetTeamId)?.dir ?? "—"}
                     </span>{" "}
-                    {teams.value.find((t) => t.id === targetTeamId.value)?.useWorktree ?? true
+                    {teams.value.find((t) => t.id === spawnForm.value.targetTeamId)?.useWorktree ?? true
                       ? "— a new worktree branches off this team's directory."
                       : "— this team skips git/worktrees, so it runs directly in that folder."}
                   </div>
                   {(() => {
-                    const team = teams.value.find((t) => t.id === targetTeamId.value);
+                    const team = teams.value.find((t) => t.id === spawnForm.value.targetTeamId);
                     const names = team?.mcpConfigIds
                       .map((id) => mcpConfigs.value.find((c) => c.id === id)?.name)
                       .filter((n): n is string => !!n) ?? [];
@@ -547,30 +509,30 @@ export function SpawnModal() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2 }}>
                       <div style={labelStyle}>Directory</div>
                       <input
-                        placeholder={spawnNoWorktree.value
+                        placeholder={spawnForm.value.noWorktree
                           ? "/absolute/path/to/folder"
-                          : spawnCreateNew.value
+                          : spawnForm.value.createNew
                           ? "/absolute/path/to/new-repo"
                           : "/absolute/path/to/repo"}
-                        value={spawnUseDefaultDir.value ? (defaultDirectory.value ?? "") : spawnDir.value}
-                        disabled={spawnUseDefaultDir.value}
+                        value={spawnForm.value.useDefaultDir ? (defaultDirectory.value ?? "") : spawnForm.value.dir}
+                        disabled={spawnForm.value.useDefaultDir}
                         onInput={(e) => setSpawnDir((e.target as HTMLInputElement).value)}
-                        style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)", opacity: spawnUseDefaultDir.value ? 0.6 : 1 }}
+                        style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)", opacity: spawnForm.value.useDefaultDir ? 0.6 : 1 }}
                       />
                     </div>
-                    {!spawnCreateNew.value && !spawnNoWorktree.value && (
+                    {!spawnForm.value.createNew && !spawnForm.value.noWorktree && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
                         <div style={labelStyle}>Base ref</div>
                         <input
                           placeholder="HEAD"
-                          value={spawnBaseRef.value}
-                          onInput={(e) => setSpawnBaseRef((e.target as HTMLInputElement).value)}
+                          value={spawnForm.value.baseRef}
+                          onInput={(e) => setSpawnField({ baseRef: (e.target as HTMLInputElement).value })}
                           style={{ ...inputStyle, fontFamily: "var(--sb-font-mono)" }}
                         />
                       </div>
                     )}
                   </div>
-                  {!spawnUseDefaultDir.value && <DirectorySuggestions />}
+                  {!spawnForm.value.useDefaultDir && <DirectorySuggestions />}
                   <label
                     style={{
                       display: "flex",
@@ -583,9 +545,9 @@ export function SpawnModal() {
                   >
                     <input
                       type="checkbox"
-                      checked={spawnUseDefaultDir.value}
+                      checked={spawnForm.value.useDefaultDir}
                       disabled={!defaultDirectory.value}
-                      onChange={(e) => setSpawnUseDefaultDir((e.target as HTMLInputElement).checked)}
+                      onChange={(e) => setSpawnField({ useDefaultDir: (e.target as HTMLInputElement).checked })}
                     />
                     {defaultDirectory.value
                       ? `Use default directory (${defaultDirectory.value})`
@@ -596,19 +558,19 @@ export function SpawnModal() {
                   >
                     <input
                       type="checkbox"
-                      checked={spawnNoWorktree.value}
+                      checked={spawnForm.value.noWorktree}
                       onChange={(e) => setSpawnNoWorktree((e.target as HTMLInputElement).checked)}
                     />
                     Skip git — run directly in this folder (no repo required, no worktrees)
                   </label>
-                  {!spawnNoWorktree.value && (
+                  {!spawnForm.value.noWorktree && (
                     <label
                       style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}
                     >
                       <input
                         type="checkbox"
-                        checked={spawnCreateNew.value}
-                        onChange={(e) => setSpawnCreateNew((e.target as HTMLInputElement).checked)}
+                        checked={spawnForm.value.createNew}
+                        onChange={(e) => setSpawnField({ createNew: (e.target as HTMLInputElement).checked })}
                       />
                       Create this as a new repo (empty directory, git init, initial commit)
                     </label>
@@ -619,7 +581,7 @@ export function SpawnModal() {
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={labelStyle}>Model</div>
-                  <ModelSelect value={memberModel.value} onChange={setMemberModel} />
+                  <ModelSelect value={spawnForm.value.memberModel} onChange={(m) => setSpawnField({ memberModel: m })} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={labelStyle}>Effort</div>
@@ -628,8 +590,8 @@ export function SpawnModal() {
                       <button
                         type="button"
                         key={e}
-                        onClick={() => setMemberEffort(e)}
-                        style={chipStyle(chipState(memberEffort.value === e, false))}
+                        onClick={() => setSpawnField({ memberEffort: e })}
+                        style={chipStyle(chipState(spawnForm.value.memberEffort === e, false))}
                       >
                         {effortLabel(e)}
                       </button>
@@ -644,8 +606,8 @@ export function SpawnModal() {
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={spawnPlanFirst.value}
-              onChange={(e) => setSpawnPlanFirst((e.target as HTMLInputElement).checked)}
+              checked={spawnForm.value.planFirst}
+              onChange={(e) => setSpawnField({ planFirst: (e.target as HTMLInputElement).checked })}
             />
             Start in plan mode — review the plan before it touches anything
           </label>
@@ -671,19 +633,19 @@ export function SpawnModal() {
             <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--sb-text-3)", cursor: "pointer" }}>
               <input
                 type="checkbox"
-                checked={spawnScheduleEnabled.value}
-                onChange={(e) => setSpawnScheduleEnabled((e.target as HTMLInputElement).checked)}
+                checked={spawnForm.value.scheduleEnabled}
+                onChange={(e) => setSpawnField({ scheduleEnabled: (e.target as HTMLInputElement).checked })}
               />
               Schedule for later instead of starting now
             </label>
-            {spawnScheduleEnabled.value && (
+            {spawnForm.value.scheduleEnabled && (
               <>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 220 }}>
                   <div style={labelStyle}>When (local time)</div>
                   <input
                     type="datetime-local"
-                    value={spawnScheduleAt.value}
-                    onInput={(e) => setSpawnScheduleAt((e.target as HTMLInputElement).value)}
+                    value={spawnForm.value.scheduleAt}
+                    onInput={(e) => setSpawnField({ scheduleAt: (e.target as HTMLInputElement).value })}
                     style={inputStyle}
                   />
                 </div>
@@ -695,8 +657,8 @@ export function SpawnModal() {
                       <button
                         type="button"
                         key={mode.id}
-                        onClick={() => setSpawnRecurrenceMode(mode.id)}
-                        style={chipStyle(chipState(spawnRecurrenceMode.value === mode.id, false))}
+                        onClick={() => setSpawnField({ recurrenceMode: mode.id })}
+                        style={chipStyle(chipState(spawnForm.value.recurrenceMode === mode.id, false))}
                       >
                         {mode.label}
                       </button>
@@ -704,15 +666,15 @@ export function SpawnModal() {
                   </div>
                 </div>
 
-                {spawnRecurrenceMode.value === "interval" && (
+                {spawnForm.value.recurrenceMode === "interval" && (
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 70 }}>
                       <div style={labelStyle}>Every</div>
                       <input
                         type="number"
                         min={1}
-                        value={spawnRecurrenceEvery.value}
-                        onInput={(e) => setSpawnRecurrenceEvery(Number((e.target as HTMLInputElement).value) || 1)}
+                        value={spawnForm.value.recurrenceEvery}
+                        onInput={(e) => setSpawnField({ recurrenceEvery: Number((e.target as HTMLInputElement).value) || 1 })}
                         style={inputStyle}
                       />
                     </div>
@@ -721,8 +683,8 @@ export function SpawnModal() {
                         <button
                           type="button"
                           key={unit}
-                          onClick={() => setSpawnRecurrenceUnit(unit)}
-                          style={chipStyle(chipState(spawnRecurrenceUnit.value === unit, false))}
+                          onClick={() => setSpawnField({ recurrenceUnit: unit })}
+                          style={chipStyle(chipState(spawnForm.value.recurrenceUnit === unit, false))}
                         >
                           {unit}
                         </button>
@@ -731,7 +693,7 @@ export function SpawnModal() {
                   </div>
                 )}
 
-                {spawnRecurrenceMode.value === "weekly" && (
+                {spawnForm.value.recurrenceMode === "weekly" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div style={labelStyle}>On these days</div>
                     <div style={{ display: "flex", gap: 5 }}>
@@ -740,7 +702,7 @@ export function SpawnModal() {
                           type="button"
                           key={day}
                           onClick={() => toggleSpawnRecurrenceDay(day)}
-                          style={chipStyle(chipState(spawnRecurrenceDays.value.includes(day), false))}
+                          style={chipStyle(chipState(spawnForm.value.recurrenceDays.includes(day), false))}
                         >
                           {label}
                         </button>

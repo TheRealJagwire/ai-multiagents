@@ -1,5 +1,5 @@
-import { defaultDirDraft, defaultDirectory, defaultDirError, defaultDirSaving } from "../store.ts";
-import { clearDefaultDirectory, saveDefaultDirectory } from "../actions.ts";
+import { defaultDirectory, defaultDirForm } from "../store.ts";
+import { clearDefaultDirectory, saveDefaultDirectory, setDefaultDirDraft } from "../actions.ts";
 import { ApiKeySection, GeminiKeySection } from "./ApiKeySection.tsx";
 
 const inputStyle = {
@@ -18,7 +18,7 @@ const inputStyle = {
 // them together instead.
 export function GeneralSection() {
   const configured = defaultDirectory.value !== null;
-  const saving = defaultDirSaving.value;
+  const saving = defaultDirForm.value.saving;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -51,9 +51,9 @@ export function GeneralSection() {
           <input
             placeholder="/absolute/path/to/repo"
             autocomplete="off"
-            value={defaultDirDraft.value}
+            value={defaultDirForm.value.draft}
             onInput={(e) => {
-              defaultDirDraft.value = (e.target as HTMLInputElement).value;
+              setDefaultDirDraft((e.target as HTMLInputElement).value);
             }}
             style={inputStyle}
           />
@@ -75,8 +75,8 @@ export function GeneralSection() {
           </button>
         </form>
 
-        {defaultDirError.value && (
-          <div style={{ fontSize: 11.5, color: "var(--sb-error-text, #c33)" }}>{defaultDirError.value}</div>
+        {defaultDirForm.value.error && (
+          <div style={{ fontSize: 11.5, color: "var(--sb-error-text, #c33)" }}>{defaultDirForm.value.error}</div>
         )}
 
         {configured && (
