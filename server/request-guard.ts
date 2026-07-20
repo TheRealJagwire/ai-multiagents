@@ -4,7 +4,7 @@
 // close that:
 // - Host must be a loopback name, or a webpage the victim visits could
 //   reach us through DNS rebinding (attacker.com resolving to 127.0.0.1).
-//   Skipped when SWITCHBOARD_HOST deliberately exposes the server — then
+//   Skipped when KRAKEN_HOST deliberately exposes the server — then
 //   clients legitimately connect via whatever name reaches that interface.
 // - Origin, when a browser sends it, must be a loopback origin, or any
 //   webpage could fire preflight-free cross-site POSTs (text/plain bodies
@@ -28,7 +28,7 @@ export function requestGuard(configuredHost: string | undefined): MiddlewareHand
     // malformed values: the real frontend is served same-origin off this
     // very server (api.ts uses relative URLs), so its Origin is always this
     // server's own origin or absent. The requestHostname comparison keeps
-    // the SWITCHBOARD_HOST exposure case working for its remote frontend.
+    // the KRAKEN_HOST exposure case working for its remote frontend.
     const origin = c.req.header("origin");
     if (origin !== undefined) {
       let originHostname: string | null;

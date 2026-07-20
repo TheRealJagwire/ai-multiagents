@@ -1,8 +1,8 @@
-# Switchboard UX Improvement Plan
+# Kraken UX Improvement Plan
 
 Written 2026-07-09 by a Claude Code session doing a UX audit of the frontend
-(`src/switchboard/`). Coverage: every component in
-`src/switchboard/components/` plus `App.tsx`, `store.ts`, `actions.ts`,
+(`src/kraken/`). Coverage: every component in
+`src/kraken/components/` plus `App.tsx`, `store.ts`, `actions.ts`,
 `api.ts` has been reviewed — the audit is complete; findings below are the
 full set. This is a plan for a **future session to implement** —
 each item lists the weakness, the fix, and the files involved. Items are
@@ -28,7 +28,7 @@ tells you," these are the worst UX bugs.
 ### 1.1 Cost always shows $0.00
 - **Weakness:** `session.cost` is never updated; the pane shows a real-looking
   `$0.00` forever. README lists this as the #1 next step.
-- **Fix:** In `server/switchboard/agent-sessions.ts`, on `SDKResultMessage`
+- **Fix:** In `server/kraken/agent-sessions.ts`, on `SDKResultMessage`
   read `total_cost_usd` and accumulate into the session via
   `mutations.ts` (`pushSessionPatch`). Frontend already renders it
   (`formatCost` in `SessionPane.tsx:122`).
@@ -180,7 +180,7 @@ tells you," these are the worst UX bugs.
   ("2m ago", `EventCard.tsx:57`) and `elapsed(startedAt)` (`SessionPane.tsx:222`,
   `TeamsTab.tsx:76`) call `Date.now()` at render time only — there is no
   interval or ticking signal anywhere (verified: zero `setInterval` in
-  `src/switchboard/`). During a quiet stretch, "2m ago" and elapsed timers
+  `src/kraken/`). During a quiet stretch, "2m ago" and elapsed timers
   freeze until an unrelated SSE event happens to re-render, then jump.
 - **Fix:** Add a `now` signal in `store.ts` updated by a single
   `setInterval` every 30s (started in `App.tsx`); pass `now.value` into
@@ -203,7 +203,7 @@ tells you," these are the worst UX bugs.
   flow, and the #1 source of spawn errors validation (2.3) will catch.
 - **Fix:** Remember recently used directories (localStorage) and offer them as
   one-click chips under the input. A native directory picker isn't reachable
-  from the webview without backend help; a `GET /api/switchboard/dirs?prefix=`
+  from the webview without backend help; a `GET /api/kraken/dirs?prefix=`
   autocomplete endpoint is a nice follow-up. **[Q4]**
 
 ### 4.3 Accessibility basics
@@ -264,7 +264,7 @@ tells you," these are the worst UX bugs.
 - **[Q3] Markdown in transcripts:** **Add a small dependency** (`marked` +
   a sanitizer) rather than hand-rolling a renderer.
 - **[Q4] Directory picking:** **Add a backend autocomplete endpoint**
-  (`GET /api/switchboard/dirs?prefix=`) — touches `routes.ts` + a new action
+  (`GET /api/kraken/dirs?prefix=`) — touches `routes.ts` + a new action
   module, in addition to the frontend recent-dirs chips.
 - **[Q6] Dark mode:** **Tokenize + add a real dark palette** — `prefers-color-scheme`
   support plus a manual toggle, not just tokenization.

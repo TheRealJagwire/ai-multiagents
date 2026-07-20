@@ -5,7 +5,7 @@ import type { HookConfig } from "./board-hook.ts";
 // Integration setup: the hooks talk real HTTP, so host the orchestration
 // app on an ephemeral port. Storage isolated to a temp dir (must be set
 // before routes.ts imports and opens KV).
-Deno.env.set("SWITCHBOARD_DATA_DIR", await Deno.makeTempDir({ prefix: "board-hook-test-" }));
+Deno.env.set("KRAKEN_DATA_DIR", await Deno.makeTempDir({ prefix: "board-hook-test-" }));
 const { runHook } = await import("./board-hook.ts");
 const { orchestrationApp } = await import("../server/orchestration/routes.ts");
 const { stopReaper } = await import("../server/orchestration/service.ts");

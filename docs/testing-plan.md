@@ -1,6 +1,6 @@
 # Automated-testing gap analysis and plan
 
-_Written 2026-07-12; **P1–P4 implemented the same day** (see the test files named below — each priority's cases landed as written, plus a `SWITCHBOARD_DATA_DIR` env override in `app-data-dir.ts` so tests never touch real user data, `stopReaper()` for timer sanitizers, and a `runHook(cfg)` testability refactor of `tools/board-hook.ts`). This document remains as the map of what's covered and why. Test style: Deno BDD (`describe`/`it` from `jsr:@std/testing/bdd`), in-memory `Deno.openKv(":memory:")` where KV is involved, real temp dirs where the filesystem is involved. Run everything with `deno task test`._
+_Written 2026-07-12; **P1–P4 implemented the same day** (see the test files named below — each priority's cases landed as written, plus a `KRAKEN_DATA_DIR` env override in `app-data-dir.ts` so tests never touch real user data, `stopReaper()` for timer sanitizers, and a `runHook(cfg)` testability refactor of `tools/board-hook.ts`). This document remains as the map of what's covered and why. Test style: Deno BDD (`describe`/`it` from `jsr:@std/testing/bdd`), in-memory `Deno.openKv(":memory:")` where KV is involved, real temp dirs where the filesystem is involved. Run everything with `deno task test`._
 
 ## What's covered today
 
@@ -8,7 +8,7 @@ One test file: `server/orchestration/service.test.ts` — 24 tests over the orch
 
 ## Gaps, prioritized
 
-### P1 — switchboard server modules with real logic and zero tests
+### P1 — kraken server modules with real logic and zero tests
 
 The persistence layer added recently is exactly the kind of code that fails silently months later.
 
@@ -34,7 +34,7 @@ The service layer is tested, but the wrappers can still drift (wrong status code
 
 ### P4 — frontend logic (worth it only for the pure parts)
 
-10. **`src/switchboard/store.ts` computeds** — `filteredStream` (kind filter × unread × session × search interplay), `railGroups`, `spawnValidationError`. These are pure signal computations; they run under plain `deno test` with a DOM-free import if the `localStorage` reads at module top are guarded (small refactor: lazy-init or `globalThis.localStorage?` fallback).
+10. **`src/kraken/store.ts` computeds** — `filteredStream` (kind filter × unread × session × search interplay), `railGroups`, `spawnValidationError`. These are pure signal computations; they run under plain `deno test` with a DOM-free import if the `localStorage` reads at module top are guarded (small refactor: lazy-init or `globalThis.localStorage?` fallback).
 11. **Component rendering** is deliberately out of scope for now — it would pull in a DOM shim and preact test renderer for comparatively little risk. Revisit if a rendering regression actually bites.
 
 ### Infrastructure
@@ -42,7 +42,7 @@ The service layer is tested, but the wrappers can still drift (wrong status code
 - `deno task test` runs `server/ src/ tools/`.
 - No CI exists; when the repo gets a remote pipeline, the task is the entry point.
 - Keep the convention: tests live next to the module (`x.test.ts`), BDD style, one `describe` per domain concept.
-- Isolation convention for anything touching disk: set `SWITCHBOARD_DATA_DIR` to a temp dir **before** a dynamic `await import(...)` of the module under test — file-path constants bind at import time.
+- Isolation convention for anything touching disk: set `KRAKEN_DATA_DIR` to a temp dir **before** a dynamic `await import(...)` of the module under test — file-path constants bind at import time.
 
 ## Remaining (deliberately deferred)
 

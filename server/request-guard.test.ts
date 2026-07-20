@@ -42,7 +42,7 @@ describe("requestGuard", () => {
     assertEquals(await status(app, url, { origin: "not a url" }), 403);
   });
 
-  it("a deliberate SWITCHBOARD_HOST exposure admits its own remote frontend, still rejects cross-site", async () => {
+  it("a deliberate KRAKEN_HOST exposure admits its own remote frontend, still rejects cross-site", async () => {
     const app = appWithGuard("0.0.0.0");
     const url = "http://192.168.1.5:8000/api/thing";
     assertEquals(await status(app, url), 200);
@@ -50,7 +50,7 @@ describe("requestGuard", () => {
     assertEquals(await status(app, url, { origin: "https://evil.example" }), 403);
   });
 
-  it("a loopback SWITCHBOARD_HOST value keeps the strict loopback posture", async () => {
+  it("a loopback KRAKEN_HOST value keeps the strict loopback posture", async () => {
     const app = appWithGuard("127.0.0.1");
     assertEquals(await status(app, "http://attacker.example:8000/api/thing"), 403);
   });

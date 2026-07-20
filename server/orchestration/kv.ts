@@ -1,11 +1,11 @@
 // Deno KV storage for the orchestration server. Shares the desktop app's
-// app-data root with switchboard's persisted files (schedules.json,
+// app-data root with kraken's persisted files (schedules.json,
 // settings.json) — same app, same machine, one place to look — but keeps
 // its own subdirectory since a Deno KV database is a directory of files,
-// not something you'd want interleaved with switchboard's JSON blobs.
+// not something you'd want interleaved with kraken's JSON blobs.
 
 import { join } from "jsr:@std/path";
-import { appDataDir } from "../switchboard/app-data-dir.ts";
+import { appDataDir } from "../kraken/app-data-dir.ts";
 
 let kvPromise: Promise<Deno.Kv> | null = null;
 

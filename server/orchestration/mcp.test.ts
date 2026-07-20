@@ -1,7 +1,7 @@
 import { describe, it } from "jsr:@std/testing/bdd";
 import { assert, assertEquals } from "jsr:@std/assert";
 
-Deno.env.set("SWITCHBOARD_DATA_DIR", await Deno.makeTempDir({ prefix: "orch-mcp-test-" }));
+Deno.env.set("KRAKEN_DATA_DIR", await Deno.makeTempDir({ prefix: "orch-mcp-test-" }));
 const { mcpFetch } = await import("./mcp.ts");
 
 // Drives the real Streamable HTTP surface the way a client would: one

@@ -4,7 +4,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 // Importing routes.ts opens KV (at the app-data dir) and boots the reaper —
 // point storage at a temp dir first, and stop the reaper's interval after,
 // or the timer sanitizer fails the run.
-Deno.env.set("SWITCHBOARD_DATA_DIR", await Deno.makeTempDir({ prefix: "orch-routes-test-" }));
+Deno.env.set("KRAKEN_DATA_DIR", await Deno.makeTempDir({ prefix: "orch-routes-test-" }));
 const { orchestrationApp } = await import("./routes.ts");
 const { stopReaper } = await import("./service.ts");
 
